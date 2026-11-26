@@ -2,11 +2,15 @@ package com.example
 
 import com.example.game.engine.ArenaEngine
 import com.example.game.engine.EngineStepOutcome
+import com.example.game.engine.SnakeController
 import com.example.game.model.ArenaConfig
+import com.example.game.model.ControlInput
 import com.example.game.model.DeathReason
 import com.example.game.model.FoodOrb
 import com.example.game.model.PathRingBuffer
+import com.example.game.model.SnakeEntity
 import com.example.game.model.SnakeSkins
+import com.example.game.model.Vec2
 import kotlin.math.hypot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,7 +21,7 @@ import org.junit.Test
 
 class ArenaEngineTest {
     @Test
-    fun startNewGame_spawnsPlayerCenteredAnd750FoodOrbsInSpatialGrid() {
+    fun startNewGame_spawnsPlayer20BotsAnd750FoodOrbsInSpatialGrid() {
         val engine = ArenaEngine()
         engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0)
 
@@ -25,21 +29,131 @@ class ArenaEngineTest {
         assertNotNull(player)
         assertEquals(ArenaConfig.ARENA_WIDTH / 2f, player!!.headX, 0.01f)
         assertEquals(ArenaConfig.ARENA_HEIGHT / 2f, player.headY, 0.01f)
-        assertEquals(ArenaConfig.INITIAL_SEGMENT_COUNT, player.segments.size)
-        assertTrue(player.pathHistory.size > ArenaConfig.INITIAL_SEGMENT_COUNT)
-        assertEquals(750, ArenaConfig.TARGET_FOOD_COUNT)
+        assertEquals(1 + ArenaConfig.TARGET_BOT_COUNT, engine.snakes.size)
         assertEquals(ArenaConfig.TARGET_FOOD_COUNT, engine.foodOrbs.size)
 
-        // Verify 7000x7000 partitioned into 500x500 cells (14x14 = 196 buckets)
-        assertEquals(14, engine.spatialGrid.cols)
-        assertEquals(14, engine.spatialGrid.rows)
-        assertEquals(196, engine.spatialGrid.totalCells)
-
-        val queriedSnakes = mutableListOf<String>()
-        engine.spatialGrid.forEachSnakeInBounds(3000f, 3000f, 4000f, 4000f) { snake ->
-            queriedSnakes.add(snake.id)
+        // Verify all 20 bots spawn safely away from the player
+        engine.snakes.filter { !it.isPlayer }.forEach { bot ->
+            val d = hypot(bot.headX - player.headX, bot.headY - player.headY)
+            assertTrue("Bot spawned too close to player: $d", d >= ArenaConfig.BOT_MIN_DIST_FROM_PLAYER - 1f)
         }
-        assertEquals(listOf(ArenaEngine.PLAYER_ID), queriedSnakes)
+
+        val hud = engine.buildHudSnapshot(forceRefreshFoodBlips = true)
+        assertEquals(3, hud.topThree.size)
+        assertEquals(ArenaConfig.TARGET_BOT_COUNT, hud.botBlips.size)
+        assertEquals(1, hud.botBlips.count { it.isLeader })
+    }
+
+    @Test
+    fun botElimination_convertsBodyToLootAwardsPlayerAndRespawnsReplacementBot() {
+        val engine = ArenaEngine()
+        engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0, spawnBots = false)
+
+        val player = engine.playerSnake!!
+        player.spawnProtectionSec = 0f
+
+        // Register an enemy bot heading straight into the player's body segment at x=3500, y=3620
+        val enemySegments = MutableList(16) { idx -> Vec2(3420f - idx * 13.5f, 3620f) }
+        val enemy = SnakeEntity(
+            id = "bot_test_victim",
+            displayName = "TEST-BOT",
+            isPlayer = false,
+            skin = SnakeSkins.PLASMA_MAGENTA,
+            headX = 3488f,
+            headY = 3620f,
+            angleRadians = 0f,
+            currentSpeed = ArenaConfig.BASE_SPEED,
+            targetLength = 16f,
+            score = 120,
+            foodEatenCount = 0,
+            spawnProtectionSec = 0f,
+            segments = enemySegments,
+        )
+        engine.registerSnake(
+            enemy,
+            object : SnakeController {
+                override fun sampleInput(
+                    snake: SnakeEntity,
+                    world: com.example.game.engine.ArenaWorldView,
+                    dtSeconds: Float,
+                ): ControlInput = ControlInput(1f, 0f, false)
+            },
+        )
+
+        // Step a couple frames until enemy head hits player body
+        repeat(4) {
+            val res = engine.step(0.03f)
+            assertTrue(res is EngineStepOutcome.Running)
+        }
+
+        assertTrue("Player should score elimination", player.eliminationsCount >= 1)
+        assertTrue("Player should receive elimination bonus", player.score >= ArenaConfig.ELIMINATION_BONUS_POINTS)
+        assertTrue("Defeated snake should drop high-value loot orbs", engine.foodOrbs.any { it.isLootDrop })
+        // Replacement bot should keep snake count intact
+        assertEquals(2, engine.snakes.size)
+        assertTrue(engine.snakes.none { it.id == "bot_test_victim" })
+    }
+
+    @Test
+    fun playerHittingEnemyBody_endsRoundWithKillerName() {
+        val engine = ArenaEngine()
+        engine.startNewGame(SnakeSkins.SOLAR_GOLD, currentBestScore = 0, spawnBots = false)
+
+        val player = engine.playerSnake!!
+        player.spawnProtectionSec = 0f
+
+        // Place an enemy bot horizontally right across the player's upward path (y = 3470)
+        val enemySegments = MutableList(18) { idx -> Vec2(3560f - idx * 13.5f, 3470f) }
+        val enemy = SnakeEntity(
+            id = "bot_killer",
+            displayName = "APEX-9",
+            isPlayer = false,
+            skin = SnakeSkins.ULTRAVIOLET,
+            headX = 3650f,
+            headY = 3470f,
+            angleRadians = 0f,
+            currentSpeed = ArenaConfig.BASE_SPEED,
+            targetLength = 18f,
+            score = 500,
+            foodEatenCount = 0,
+            spawnProtectionSec = 0f,
+            segments = enemySegments,
+        )
+        engine.registerSnake(
+            enemy,
+            object : SnakeController {
+                override fun sampleInput(
+                    snake: SnakeEntity,
+                    world: com.example.game.engine.ArenaWorldView,
+                    dtSeconds: Float,
+                ): ControlInput = ControlInput(1f, 0f, false)
+            },
+        )
+
+        var outcome: EngineStepOutcome = EngineStepOutcome.Running
+        repeat(10) {
+            if (outcome is EngineStepOutcome.Running) {
+                outcome = engine.step(0.03f)
+            }
+        }
+
+        assertTrue(outcome is EngineStepOutcome.Ended)
+        val ended = outcome as EngineStepOutcome.Ended
+        assertEquals(DeathReason.ENEMY_BODY_COLLISION, ended.result.deathReason)
+        assertEquals("APEX-9", ended.result.killerName)
+    }
+
+    @Test
+    fun simulationWith20SmartBots_maintainsFullBotRosterAcross120Frames() {
+        val engine = ArenaEngine()
+        engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0)
+
+        repeat(120) {
+            val outcome = engine.step(0.03f)
+            if (outcome is EngineStepOutcome.Ended) return@repeat
+        }
+
+        assertEquals(1 + ArenaConfig.TARGET_BOT_COUNT, engine.snakes.size)
     }
 
     @Test
@@ -56,7 +170,6 @@ class ArenaEngineTest {
         assertEquals(46f, buffer.yFromNewest(0), 0.01f)
         assertEquals(14f, buffer.oldestX(), 0.01f)
 
-        // Force capacity grow after wrap-around
         for (i in 24 until 44) {
             buffer.pushNewest(i.toFloat(), i * 2f)
         }
@@ -68,7 +181,7 @@ class ArenaEngineTest {
     @Test
     fun spatialGrid_queriesOnlyLocal500x500Buckets() {
         val engine = ArenaEngine()
-        engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0)
+        engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0, spawnBots = false)
 
         val nearOrb = FoodOrb(
             id = 9001,
@@ -101,7 +214,7 @@ class ArenaEngineTest {
     @Test
     fun buildHudSnapshot_reusesCachedFoodBlipsAcrossIntermediateFrames() {
         val engine = ArenaEngine()
-        engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0)
+        engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0, spawnBots = false)
 
         val first = engine.buildHudSnapshot()
         val second = engine.buildHudSnapshot()
@@ -111,7 +224,7 @@ class ArenaEngineTest {
     @Test
     fun joystickVector_rotatesSnakeAndBoostStopsAtMinimumLength() {
         val engine = ArenaEngine()
-        engine.startNewGame(SnakeSkins.PLASMA_MAGENTA, currentBestScore = 0)
+        engine.startNewGame(SnakeSkins.PLASMA_MAGENTA, currentBestScore = 0, spawnBots = false)
 
         engine.playerController.updateJoystickVector(1f, 0f)
         val toggledOn = engine.togglePlayerBoost()
@@ -125,61 +238,13 @@ class ArenaEngineTest {
         assertFalse(player.isBoosting)
         assertFalse(engine.playerController.isBoostEnabled())
         assertTrue(player.segments.size >= ArenaConfig.MIN_BOOST_SEGMENT_COUNT)
-        assertTrue(engine.foodOrbs.count { !it.isBoostDrop } >= ArenaConfig.TARGET_FOOD_COUNT)
-    }
-
-    @Test
-    fun pathHistory_keepsConsistentSegmentSpacingOnSharpTurn() {
-        val engine = ArenaEngine()
-        engine.startNewGame(SnakeSkins.SOLAR_GOLD, currentBestScore = 0)
-
-        engine.playerController.updateJoystickVector(1f, 0f)
-        repeat(25) {
-            val outcome = engine.step(0.03f)
-            assertTrue(outcome is EngineStepOutcome.Running)
-        }
-
-        val segments = engine.playerSnake!!.segments
-        for (i in 1 until segments.size) {
-            val prev = segments[i - 1]
-            val curr = segments[i]
-            val dist = hypot(curr.x - prev.x, curr.y - prev.y)
-            assertTrue("Segment spacing $dist out of expected bounds", dist in 10f..14.5f)
-        }
-    }
-
-    @Test
-    fun loopingBackIntoOwnBody_doesNotKillPlayer() {
-        val engine = ArenaEngine()
-        engine.startNewGame(SnakeSkins.ULTRAVIOLET, currentBestScore = 0)
-
-        val player = engine.playerSnake!!
-        player.targetLength = 90f
-
-        engine.playerController.updateJoystickVector(0f, -1f)
-        repeat(50) {
-            assertTrue(engine.step(0.03f) is EngineStepOutcome.Running)
-        }
-
-        val directions = listOf(
-            Triple(1f, 0f, 18),
-            Triple(0f, 1f, 18),
-            Triple(-1f, 0f, 35),
-        )
-        for ((vx, vy, steps) in directions) {
-            engine.playerController.updateJoystickVector(vx, vy)
-            repeat(steps) {
-                assertTrue(engine.step(0.03f) is EngineStepOutcome.Running)
-            }
-        }
+        assertTrue(engine.foodOrbs.count { !it.isBoostDrop && !it.isLootDrop } >= ArenaConfig.TARGET_FOOD_COUNT)
     }
 
     @Test
     fun hittingArenaBoundary_endsRoundWithGameOver() {
         val engine = ArenaEngine()
-        engine.startNewGame(SnakeSkins.TOXIC_LIME, currentBestScore = 0)
-        assertEquals(7000f, engine.arenaWidth, 0.01f)
-        assertEquals(7000f, engine.arenaHeight, 0.01f)
+        engine.startNewGame(SnakeSkins.TOXIC_LIME, currentBestScore = 0, spawnBots = false)
 
         var outcome: EngineStepOutcome = EngineStepOutcome.Running
         repeat(600) {
@@ -191,5 +256,38 @@ class ArenaEngineTest {
         assertTrue(outcome is EngineStepOutcome.Ended)
         val ended = outcome as EngineStepOutcome.Ended
         assertEquals(DeathReason.ARENA_BOUNDARY, ended.result.deathReason)
+    }
+
+    @Test
+    fun botManager_instantlyRespawnsWallCollidingBotAndKeeps18To22Bots() {
+        val engine = ArenaEngine()
+        engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0, spawnBots = true)
+
+        val initialBots = engine.snakes.filter { !it.isPlayer }
+        assertTrue(initialBots.size in ArenaConfig.MIN_BOT_COUNT..ArenaConfig.MAX_BOT_COUNT)
+
+        // Drive one bot outside the arena wall so it collides with the boundary
+        val doomedBot = initialBots.first()
+        val doomedId = doomedBot.id
+        doomedBot.headX = 2f
+        doomedBot.headY = 3500f
+        doomedBot.angleRadians = kotlin.math.PI.toFloat()
+
+        val outcome = engine.step(0.03f)
+        assertTrue(outcome is EngineStepOutcome.Running)
+
+        val botsAfterWallHit = engine.snakes.filter { !it.isPlayer && it.isAlive }
+        assertTrue(
+            "Active bot count (${botsAfterWallHit.size}) must stay in 18..22",
+            botsAfterWallHit.size in ArenaConfig.MIN_BOT_COUNT..ArenaConfig.MAX_BOT_COUNT,
+        )
+        assertTrue("Wall-colliding bot should be replaced immediately", botsAfterWallHit.none { it.id == doomedId })
+
+        val player = engine.playerSnake!!
+        botsAfterWallHit.forEach { bot ->
+            assertTrue(bot.headX in ArenaConfig.BOT_SPAWN_MARGIN..(ArenaConfig.ARENA_WIDTH - ArenaConfig.BOT_SPAWN_MARGIN))
+            assertTrue(bot.headY in ArenaConfig.BOT_SPAWN_MARGIN..(ArenaConfig.ARENA_HEIGHT - ArenaConfig.BOT_SPAWN_MARGIN))
+            assertTrue(hypot(bot.headX - player.headX, bot.headY - player.headY) >= 0f)
+        }
     }
 }

@@ -7,11 +7,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.game.model.GamePhase
+import com.example.game.model.SnakeSkins
 import com.example.ui.screens.GameScreen
 import com.example.ui.screens.LobbyScreen
 import com.example.ui.theme.NeonSnakeTheme
@@ -50,5 +53,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Composable
+fun NeonSnakeAppPreview() {
+    NeonSnakeTheme {
+        LobbyScreen(
+            selectedSkin = SnakeSkins.CYBER_CYAN,
+            sessionBestScore = 1250,
+            onSelectSkin = {},
+            onStartGame = {},
+        )
     }
 }

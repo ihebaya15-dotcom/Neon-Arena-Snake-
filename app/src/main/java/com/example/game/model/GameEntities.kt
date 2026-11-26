@@ -1,10 +1,10 @@
 package com.example.game.model
 
+import androidx.compose.ui.graphics.Color
+
 /**
  * Primitive FloatArray-backed circular ring buffer storing 2D (x, y) path history
  * with zero per-frame object allocations.
- *
- * Logical index 0 is the oldest sample (tail end), and [size] - 1 is the newest (head).
  */
 class PathRingBuffer(initialCapacity: Int = 1024) {
     private var xs = FloatArray(initialCapacity.coerceAtLeast(16))
@@ -68,6 +68,12 @@ class PathRingBuffer(initialCapacity: Int = 1024) {
     }
 }
 
+enum class BotPersonality {
+    HUNTER,
+    SCAVENGER,
+    TACTICIAN,
+}
+
 data class Vec2(
     var x: Float,
     var y: Float,
@@ -83,11 +89,24 @@ data class FoodOrb(
     val colorIndex: Int,
     val pulsePhase: Float,
     val isBoostDrop: Boolean = false,
+    val isLootDrop: Boolean = false,
     var isConsumed: Boolean = false,
+)
+
+data class DeathBurstParticle(
+    var x: Float,
+    var y: Float,
+    var vx: Float,
+    var vy: Float,
+    var lifeSec: Float,
+    val maxLifeSec: Float,
+    val radius: Float,
+    val color: Color,
 )
 
 data class SnakeEntity(
     val id: String,
+    val displayName: String,
     val isPlayer: Boolean,
     val skin: SnakeSkin,
     var headX: Float,
@@ -97,7 +116,12 @@ data class SnakeEntity(
     var targetLength: Float,
     var score: Int,
     var foodEatenCount: Int,
-    var isBoosting: Boolean,
+    var eliminationsCount: Int = 0,
+    var isBoosting: Boolean = false,
+    var spawnProtectionSec: Float = 0f,
+    var isLeader: Boolean = false,
+    var isAlive: Boolean = true,
+    val personality: BotPersonality? = null,
     var headRadius: Float = ArenaConfig.BASE_HEAD_RADIUS,
     var bodyRadius: Float = ArenaConfig.BASE_BODY_RADIUS,
     val segments: MutableList<Vec2> = mutableListOf(),
@@ -116,14 +140,38 @@ data class MiniMapBlip(
     val isLargeOrb: Boolean,
 )
 
+data class BotMapBlip(
+    val normX: Float,
+    val normY: Float,
+    val color: Color,
+    val isLeader: Boolean,
+)
+
+data class LeaderboardEntry(
+    val snakeId: String,
+    val displayName: String,
+    val score: Int,
+    val rank: Int,
+    val color: Color,
+    val isPlayer: Boolean,
+)
+
+data class KillFeedEvent(
+    val id: Long,
+    val victimName: String,
+    val rewardPoints: Int,
+)
+
 data class ArenaHudSnapshot(
     val score: Int = 0,
     val length: Int = ArenaConfig.INITIAL_SEGMENT_COUNT,
     val bestScore: Int = 0,
+    val eliminationsCount: Int = 0,
     val elapsedSeconds: Int = 0,
     val isBoostActive: Boolean = false,
     val canBoost: Boolean = true,
     val boostBlockedByMinLength: Boolean = false,
+    val spawnProtectionRemainingSec: Float = 0f,
     val playerX: Float = ArenaConfig.ARENA_WIDTH / 2f,
     val playerY: Float = ArenaConfig.ARENA_HEIGHT / 2f,
     val arenaWidth: Float = ArenaConfig.ARENA_WIDTH,
@@ -132,10 +180,17 @@ data class ArenaHudSnapshot(
     val playerNormY: Float = 0.5f,
     val playerAngleRadians: Float = 0f,
     val foodBlips: List<MiniMapBlip> = emptyList(),
+    val botBlips: List<BotMapBlip> = emptyList(),
+    val topThree: List<LeaderboardEntry> = emptyList(),
+    val playerRankEntry: LeaderboardEntry? = null,
+    val totalSnakesCount: Int = 1,
+    val latestPlayerKill: KillFeedEvent? = null,
 )
 
 enum class DeathReason {
     ARENA_BOUNDARY,
+    ENEMY_BODY_COLLISION,
+    HEAD_ON_COLLISION,
 }
 
 data class GameResult(
@@ -143,8 +198,11 @@ data class GameResult(
     val peakLength: Int,
     val survivedSeconds: Int,
     val foodEaten: Int,
+    val eliminationsCount: Int,
+    val bestRank: Int,
     val isNewBest: Boolean,
     val deathReason: DeathReason = DeathReason.ARENA_BOUNDARY,
+    val killerName: String? = null,
 )
 
 sealed interface GamePhase {

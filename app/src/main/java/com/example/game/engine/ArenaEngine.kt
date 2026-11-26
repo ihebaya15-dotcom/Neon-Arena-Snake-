@@ -2,11 +2,15 @@ package com.example.game.engine
 
 import com.example.game.model.ArenaConfig
 import com.example.game.model.ArenaHudSnapshot
+import com.example.game.model.BotMapBlip
 import com.example.game.model.CameraState
 import com.example.game.model.ControlInput
+import com.example.game.model.DeathBurstParticle
 import com.example.game.model.DeathReason
 import com.example.game.model.FoodOrb
 import com.example.game.model.GameResult
+import com.example.game.model.KillFeedEvent
+import com.example.game.model.LeaderboardEntry
 import com.example.game.model.MiniMapBlip
 import com.example.game.model.PathRingBuffer
 import com.example.game.model.SnakeEntity
@@ -18,6 +22,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
+import kotlin.random.Random
 
 sealed interface EngineStepOutcome {
     data object Running : EngineStepOutcome
@@ -27,6 +32,8 @@ sealed interface EngineStepOutcome {
 class ArenaEngine(
     private val foodSpawner: FoodSpawner = FoodSpawner(),
     private val cameraController: CameraController = CameraController(),
+    val botManager: BotManager = BotManager(),
+    private val combatCollisionResolver: CombatCollisionResolver = CombatCollisionResolver(),
     override val spatialGrid: ArenaSpatialGrid = ArenaSpatialGrid(),
 ) : ArenaWorldView {
 
@@ -39,10 +46,16 @@ class ArenaEngine(
     private val _snakes = mutableListOf<SnakeEntity>()
     override val snakes: List<SnakeEntity> get() = _snakes
 
-    private val controllers = mutableMapOf<String, SnakeController>()
-    private val nearbyFoodQueryBuffer = ArrayList<FoodOrb>(32)
-    val playerController = HumanJoystickController()
+    private val _particles = mutableListOf<DeathBurstParticle>()
+    val particles: List<DeathBurstParticle> get() = _particles
 
+    private val controllers = mutableMapOf<String, SnakeController>()
+    private val botSlotById = mutableMapOf<String, Int>()
+    private val nearbyFoodQueryBuffer = ArrayList<FoodOrb>(32)
+    private val eliminationsBuffer = ArrayList<EliminationRecord>(8)
+    private val sortedLeaderboardBuffer = ArrayList<SnakeEntity>(24)
+
+    val playerController = HumanJoystickController()
     val camera = CameraState()
 
     var worldTimeSeconds: Float = 0f
@@ -50,11 +63,22 @@ class ArenaEngine(
 
     private var elapsedPlaySeconds: Float = 0f
     private var peakLength: Int = ArenaConfig.INITIAL_SEGMENT_COUNT
+    private var bestRankAchieved: Int = ArenaConfig.TARGET_BOT_COUNT + 1
     private var sessionBestScore: Int = 0
     private var boostDropAccumulatorSec: Float = 0f
     private var boostBlockedWarningTimerSec: Float = 0f
+
     private var cachedFoodBlips: List<MiniMapBlip> = emptyList()
+    private var cachedBotBlips: List<BotMapBlip> = emptyList()
+    private var cachedTopThree: List<LeaderboardEntry> = emptyList()
+    private var cachedPlayerRankEntry: LeaderboardEntry? = null
     private var foodBlipRefreshCounter: Int = 0
+    private var leaderboardRefreshCounter: Int = 0
+
+    private var latestPlayerKill: KillFeedEvent? = null
+    private var killBannerTimerSec: Float = 0f
+    private var nextKillEventId: Long = 1L
+    private var botsEnabled: Boolean = true
 
     val playerSnake: SnakeEntity?
         get() = _snakes.firstOrNull { it.isPlayer }
@@ -62,16 +86,21 @@ class ArenaEngine(
     fun startNewGame(
         playerSkin: SnakeSkin,
         currentBestScore: Int,
+        spawnBots: Boolean = true,
     ) {
         sessionBestScore = currentBestScore
         elapsedPlaySeconds = 0f
         worldTimeSeconds = 0f
         boostDropAccumulatorSec = 0f
         boostBlockedWarningTimerSec = 0f
+        latestPlayerKill = null
+        killBannerTimerSec = 0f
         playerController.reset()
 
         _snakes.clear()
+        _particles.clear()
         controllers.clear()
+        botSlotById.clear()
 
         val startX = ArenaConfig.ARENA_WIDTH / 2f
         val startY = ArenaConfig.ARENA_HEIGHT / 2f
@@ -84,7 +113,6 @@ class ArenaEngine(
             )
         }
 
-        // Seed PathRingBuffer oldest-to-newest so index 0 is tail-end and newest is head
         val totalInitialPathDist = (ArenaConfig.INITIAL_SEGMENT_COUNT + 4) * ArenaConfig.SEGMENT_SPACING
         val sampleCount = (totalInitialPathDist / ArenaConfig.PATH_SAMPLE_STEP).toInt().coerceAtLeast(2)
         val initialPath = PathRingBuffer(initialCapacity = 1024)
@@ -98,6 +126,7 @@ class ArenaEngine(
 
         val player = SnakeEntity(
             id = PLAYER_ID,
+            displayName = "أنت",
             isPlayer = true,
             skin = playerSkin,
             headX = startX,
@@ -107,26 +136,47 @@ class ArenaEngine(
             targetLength = ArenaConfig.INITIAL_SEGMENT_COUNT.toFloat(),
             score = 0,
             foodEatenCount = 0,
+            eliminationsCount = 0,
             isBoosting = false,
+            spawnProtectionSec = if (spawnBots) ArenaConfig.SPAWN_PROTECTION_SEC else 0f,
             segments = initialSegments,
             pathHistory = initialPath,
         )
         _snakes.add(player)
         controllers[PLAYER_ID] = playerController
         peakLength = initialSegments.size
+        bestRankAchieved = if (spawnBots) ArenaConfig.TARGET_BOT_COUNT + 1 else 1
+
+        botsEnabled = spawnBots
+        if (spawnBots) {
+            botManager.initializeBots(
+                playerSnake = player,
+                snakes = _snakes,
+                controllers = controllers,
+                botSlotById = botSlotById,
+            )
+        }
 
         foodSpawner.populateInitialFood(_foodOrbs)
         spatialGrid.rebuildFoodGrid(_foodOrbs)
         spatialGrid.rebuildSnakeGrid(_snakes)
+        refreshLeaderboardAndBlips()
         cachedFoodBlips = rebuildMiniMapFoodBlips()
         foodBlipRefreshCounter = 0
+        leaderboardRefreshCounter = 0
         cameraController.snapTo(camera, player)
     }
 
     /**
-     * Future Phase 2+ hook for registering AI bots or remote network players.
+     * Hook for registering custom bots or Phase 3 remote network players.
      */
     fun registerSnake(snake: SnakeEntity, controller: SnakeController) {
+        if (snake.pathHistory.size == 0 && snake.segments.isNotEmpty()) {
+            for (i in snake.segments.lastIndex downTo 0) {
+                val seg = snake.segments[i]
+                snake.pathHistory.pushNewest(seg.x, seg.y)
+            }
+        }
         _snakes.add(snake)
         controllers[snake.id] = controller
     }
@@ -140,36 +190,95 @@ class ArenaEngine(
         if (boostBlockedWarningTimerSec > 0f) {
             boostBlockedWarningTimerSec = (boostBlockedWarningTimerSec - dt).coerceAtLeast(0f)
         }
+        if (killBannerTimerSec > 0f) {
+            killBannerTimerSec = (killBannerTimerSec - dt).coerceAtLeast(0f)
+            if (killBannerTimerSec == 0f) {
+                latestPlayerKill = null
+            }
+        }
+
+        updateParticles(dt)
 
         val player = playerSnake ?: return EngineStepOutcome.Running
 
-        for (i in _snakes.indices) {
+        // 1. Sample controls and advance all active snakes
+        var i = 0
+        while (i < _snakes.size) {
             val snake = _snakes[i]
-            val controller = controllers[snake.id] ?: continue
-            val input = controller.sampleInput(snake, this, dt)
-            updateSnakeMovement(snake, input, dt)
-
-            if (snake.isPlayer && isOutsideArena(snake)) {
-                val isNewBest = snake.score > sessionBestScore
-                val result = GameResult(
-                    finalScore = snake.score,
-                    peakLength = peakLength,
-                    survivedSeconds = elapsedPlaySeconds.toInt(),
-                    foodEaten = snake.foodEatenCount,
-                    isNewBest = isNewBest,
-                    deathReason = DeathReason.ARENA_BOUNDARY,
-                )
-                return EngineStepOutcome.Ended(result)
+            if (!snake.isAlive) {
+                i++
+                continue
+            }
+            if (snake.spawnProtectionSec > 0f) {
+                snake.spawnProtectionSec = (snake.spawnProtectionSec - dt).coerceAtLeast(0f)
+            }
+            val controller = controllers[snake.id]
+            if (controller != null) {
+                val input = controller.sampleInput(snake, this, dt)
+                updateSnakeMovement(snake, input, dt)
             }
 
-            updateFoodInteractions(snake, dt)
+            if (isOutsideArena(snake)) {
+                if (snake.isPlayer) {
+                    snake.isAlive = false
+                    spawnDeathParticles(snake)
+                    return EngineStepOutcome.Ended(
+                        buildGameResult(
+                            player = snake,
+                            reason = DeathReason.ARENA_BOUNDARY,
+                            killerName = null,
+                        ),
+                    )
+                } else {
+                    eliminateSnakeAndRespawnBot(
+                        victim = snake,
+                        killer = null,
+                        player = player,
+                    )
+                }
+            } else {
+                updateFoodInteractions(snake, dt)
+            }
+            i++
         }
 
-        // Remove consumed orbs in one pass, replenish to TARGET_FOOD_COUNT (750),
-        // and refresh the 500x500 spatial buckets for rendering & next-frame queries.
+        // 2. Refresh snake spatial grid before snake-vs-snake combat resolution
+        spatialGrid.rebuildSnakeGrid(_snakes)
+        combatCollisionResolver.resolveSnakeCollisions(
+            snakes = _snakes,
+            spatialGrid = spatialGrid,
+            outEliminations = eliminationsBuffer,
+        )
+
+        for (eIdx in eliminationsBuffer.indices) {
+            val record = eliminationsBuffer[eIdx]
+            val victim = record.victim
+            if (!victim.isAlive) continue
+
+            if (victim.isPlayer) {
+                victim.isAlive = false
+                convertBodyToLoot(victim)
+                spawnDeathParticles(victim)
+                return EngineStepOutcome.Ended(
+                    buildGameResult(
+                        player = victim,
+                        reason = record.reason,
+                        killerName = record.killer?.displayName,
+                    ),
+                )
+            } else {
+                eliminateSnakeAndRespawnBot(
+                    victim = victim,
+                    killer = record.killer,
+                    player = player,
+                )
+            }
+        }
+
+        // 3. Batch prune consumed orbs, replenish natural pool (750), and rebuild spatial buckets
         var writeIdx = 0
-        for (i in _foodOrbs.indices) {
-            val orb = _foodOrbs[i]
+        for (idx in _foodOrbs.indices) {
+            val orb = _foodOrbs[idx]
             if (!orb.isConsumed) {
                 _foodOrbs[writeIdx++] = orb
             }
@@ -178,9 +287,25 @@ class ArenaEngine(
             _foodOrbs.subList(writeIdx, _foodOrbs.size).clear()
         }
 
+        if (botsEnabled) {
+            botManager.ensurePopulationInRange(
+                playerSnake = player,
+                snakes = _snakes,
+                controllers = controllers,
+                botSlotById = botSlotById,
+            )
+        }
+
         foodSpawner.ensureNaturalFoodCount(_foodOrbs)
         spatialGrid.rebuildFoodGrid(_foodOrbs)
         spatialGrid.rebuildSnakeGrid(_snakes)
+
+        leaderboardRefreshCounter++
+        if (leaderboardRefreshCounter >= 6) {
+            leaderboardRefreshCounter = 0
+            refreshLeaderboardAndBlips()
+        }
+
         cameraController.update(camera, player, dt)
         return EngineStepOutcome.Running
     }
@@ -215,14 +340,20 @@ class ArenaEngine(
             cachedFoodBlips = rebuildMiniMapFoodBlips()
         }
 
+        if (forceRefreshFoodBlips) {
+            refreshLeaderboardAndBlips()
+        }
+
         return ArenaHudSnapshot(
             score = player.score,
             length = player.segments.size,
             bestScore = maxOf(sessionBestScore, player.score),
+            eliminationsCount = player.eliminationsCount,
             elapsedSeconds = elapsedPlaySeconds.toInt(),
             isBoostActive = player.isBoosting,
             canBoost = canBoost,
             boostBlockedByMinLength = boostBlockedWarningTimerSec > 0f,
+            spawnProtectionRemainingSec = player.spawnProtectionSec,
             playerX = player.headX,
             playerY = player.headY,
             arenaWidth = arenaWidth,
@@ -231,6 +362,183 @@ class ArenaEngine(
             playerNormY = (player.headY / arenaHeight).coerceIn(0f, 1f),
             playerAngleRadians = player.angleRadians,
             foodBlips = cachedFoodBlips,
+            botBlips = cachedBotBlips,
+            topThree = cachedTopThree,
+            playerRankEntry = cachedPlayerRankEntry,
+            totalSnakesCount = _snakes.size,
+            latestPlayerKill = latestPlayerKill,
+        )
+    }
+
+    private fun eliminateSnakeAndRespawnBot(
+        victim: SnakeEntity,
+        killer: SnakeEntity?,
+        player: SnakeEntity,
+    ) {
+        victim.isAlive = false
+        convertBodyToLoot(victim)
+        spawnDeathParticles(victim)
+
+        if (killer != null && killer.isAlive) {
+            killer.eliminationsCount += 1
+            killer.score += ArenaConfig.ELIMINATION_BONUS_POINTS
+            if (killer.isPlayer) {
+                latestPlayerKill = KillFeedEvent(
+                    id = nextKillEventId++,
+                    victimName = victim.displayName,
+                    rewardPoints = ArenaConfig.ELIMINATION_BONUS_POINTS,
+                )
+                killBannerTimerSec = 2.4f
+            }
+        }
+
+        botManager.respawnEliminatedBot(
+            eliminatedBot = victim,
+            playerSnake = player,
+            snakes = _snakes,
+            controllers = controllers,
+            botSlotById = botSlotById,
+        )
+    }
+
+    private fun convertBodyToLoot(victim: SnakeEntity) {
+        val skinColorIdx = SnakeSkins.all.indexOfFirst { it.id == victim.skin.id }
+            .coerceAtLeast(0)
+        val segments = victim.segments
+        var idx = 0
+        while (idx < segments.size) {
+            val seg = segments[idx]
+            _foodOrbs.add(
+                foodSpawner.createLootOrb(
+                    x = seg.x,
+                    y = seg.y,
+                    colorIndex = skinColorIdx,
+                ),
+            )
+            idx += 2
+        }
+    }
+
+    private fun spawnDeathParticles(victim: SnakeEntity) {
+        val count = 16
+        val color = victim.skin.primaryColor
+        for (p in 0 until count) {
+            val angle = (p.toFloat() / count) * (2f * PI.toFloat()) + Random.nextFloat() * 0.35f
+            val speed = 90f + Random.nextFloat() * 190f
+            _particles.add(
+                DeathBurstParticle(
+                    x = victim.headX,
+                    y = victim.headY,
+                    vx = cos(angle) * speed,
+                    vy = sin(angle) * speed,
+                    lifeSec = 0.55f,
+                    maxLifeSec = 0.55f,
+                    radius = 5f + Random.nextFloat() * 5f,
+                    color = color,
+                ),
+            )
+        }
+    }
+
+    private fun updateParticles(dt: Float) {
+        var idx = _particles.lastIndex
+        while (idx >= 0) {
+            val p = _particles[idx]
+            p.lifeSec -= dt
+            if (p.lifeSec <= 0f) {
+                _particles.removeAt(idx)
+            } else {
+                p.x += p.vx * dt
+                p.y += p.vy * dt
+                p.vx *= 0.94f
+                p.vy *= 0.94f
+            }
+            idx--
+        }
+    }
+
+    private fun refreshLeaderboardAndBlips() {
+        sortedLeaderboardBuffer.clear()
+        for (i in _snakes.indices) {
+            val s = _snakes[i]
+            if (s.isAlive) {
+                s.isLeader = false
+                sortedLeaderboardBuffer.add(s)
+            }
+        }
+        sortedLeaderboardBuffer.sortByDescending { it.score }
+
+        val leader = sortedLeaderboardBuffer.firstOrNull()
+        if (leader != null) {
+            leader.isLeader = true
+        }
+
+        val top3 = ArrayList<LeaderboardEntry>(3)
+        var playerEntry: LeaderboardEntry? = null
+        val botMapList = ArrayList<BotMapBlip>(_snakes.size)
+
+        for (rankIdx in sortedLeaderboardBuffer.indices) {
+            val snake = sortedLeaderboardBuffer[rankIdx]
+            val rank = rankIdx + 1
+            if (snake.isPlayer) {
+                if (rank < bestRankAchieved) {
+                    bestRankAchieved = rank
+                }
+                if (rank > 3) {
+                    playerEntry = LeaderboardEntry(
+                        snakeId = snake.id,
+                        displayName = snake.displayName,
+                        score = snake.score,
+                        rank = rank,
+                        color = snake.skin.primaryColor,
+                        isPlayer = true,
+                    )
+                }
+            } else {
+                botMapList.add(
+                    BotMapBlip(
+                        normX = (snake.headX / arenaWidth).coerceIn(0f, 1f),
+                        normY = (snake.headY / arenaHeight).coerceIn(0f, 1f),
+                        color = snake.skin.primaryColor,
+                        isLeader = snake.isLeader,
+                    ),
+                )
+            }
+
+            if (rank <= 3) {
+                top3.add(
+                    LeaderboardEntry(
+                        snakeId = snake.id,
+                        displayName = snake.displayName,
+                        score = snake.score,
+                        rank = rank,
+                        color = snake.skin.primaryColor,
+                        isPlayer = snake.isPlayer,
+                    ),
+                )
+            }
+        }
+
+        cachedTopThree = top3
+        cachedPlayerRankEntry = playerEntry
+        cachedBotBlips = botMapList
+    }
+
+    private fun buildGameResult(
+        player: SnakeEntity,
+        reason: DeathReason,
+        killerName: String?,
+    ): GameResult {
+        return GameResult(
+            finalScore = player.score,
+            peakLength = peakLength,
+            survivedSeconds = elapsedPlaySeconds.toInt(),
+            foodEaten = player.foodEatenCount,
+            eliminationsCount = player.eliminationsCount,
+            bestRank = bestRankAchieved,
+            isNewBest = player.score > sessionBestScore,
+            deathReason = reason,
+            killerName = killerName,
         )
     }
 
@@ -238,12 +546,12 @@ class ArenaEngine(
         val blips = ArrayList<MiniMapBlip>(400)
         for (i in _foodOrbs.indices) {
             val orb = _foodOrbs[i]
-            if (orb.points >= 25 || (orb.id and 1) == 0) {
+            if (orb.isLootDrop || orb.points >= 25 || (orb.id and 1) == 0) {
                 blips.add(
                     MiniMapBlip(
                         normX = (orb.x / arenaWidth).coerceIn(0f, 1f),
                         normY = (orb.y / arenaHeight).coerceIn(0f, 1f),
-                        isLargeOrb = orb.points >= 50,
+                        isLargeOrb = orb.isLootDrop || orb.points >= 50,
                     ),
                 )
             }
@@ -315,7 +623,6 @@ class ArenaEngine(
         snake.headX += cos(snake.angleRadians) * snake.currentSpeed * dt
         snake.headY += sin(snake.angleRadians) * snake.currentSpeed * dt
 
-        // Update snake girth subtly as length increases
         val growthBonus = ((snake.segments.size - ArenaConfig.INITIAL_SEGMENT_COUNT) * 0.06f)
             .coerceIn(0f, 6.5f)
         snake.headRadius = ArenaConfig.BASE_HEAD_RADIUS + growthBonus
@@ -365,7 +672,6 @@ class ArenaEngine(
         segments[0].x = snake.headX
         segments[0].y = snake.headY
 
-        // Walk backwards through the primitive ring buffer with zero allocations
         val spacing = ArenaConfig.SEGMENT_SPACING
         var reverseIdx = 0
         val maxReverseIdx = path.size - 2
@@ -405,7 +711,6 @@ class ArenaEngine(
             }
         }
 
-        // O(1) ring-buffer tail pruning (keep 32-sample growth cushion)
         val samplesUsedFromNewest = oldestUsedReverseIdx + 1
         val excess = path.size - (samplesUsedFromNewest + 32)
         if (excess > 24) {

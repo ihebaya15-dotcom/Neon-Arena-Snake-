@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.game.model.ArenaConfig
+import com.example.game.model.BotMapBlip
 import com.example.game.model.MiniMapBlip
 import com.example.ui.theme.DangerCrimson
 import com.example.ui.theme.GridLineBlue
@@ -36,8 +37,8 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Corner radar Mini-map displaying the player's live position and heading
- * relative to the 7000x7000 arena boundaries, alongside food cluster blips.
+ * Corner radar Mini-map displaying the player's position, active AI bots,
+ * #1 arena leader, and food clusters relative to the 7000x7000 boundaries.
  */
 @Composable
 fun MiniMap(
@@ -46,6 +47,7 @@ fun MiniMap(
     playerAngleRadians: Float,
     accentColor: Color,
     foodBlips: List<MiniMapBlip>,
+    botBlips: List<BotMapBlip>,
     modifier: Modifier = Modifier,
     arenaWidth: Float = ArenaConfig.ARENA_WIDTH,
     arenaHeight: Float = ArenaConfig.ARENA_HEIGHT,
@@ -69,7 +71,7 @@ fun MiniMap(
             val w = size.width
             val h = size.height
 
-            // 7000x7000 sector grid (7x7 sectors of 1000 world units each)
+            // 7000x7000 sector grid (7x7 sectors)
             val sectors = 7
             val cellW = w / sectors
             val cellH = h / sectors
@@ -117,30 +119,53 @@ fun MiniMap(
                 val by = blip.normY * h
                 drawCircle(
                     color = if (blip.isLargeOrb) {
-                        SolarGold.copy(alpha = 0.88f)
+                        SolarGold.copy(alpha = 0.72f)
                     } else {
-                        NeonCyan.copy(alpha = 0.34f)
+                        NeonCyan.copy(alpha = 0.25f)
                     },
-                    radius = if (blip.isLargeOrb) 2.3f else 1.2f,
+                    radius = if (blip.isLargeOrb) 1.8f else 1.0f,
                     center = Offset(bx, by),
                 )
+            }
+
+            // 20 AI Bots blips
+            for (i in botBlips.indices) {
+                val bot = botBlips[i]
+                val bx = bot.normX * w
+                val by = bot.normY * h
+                if (bot.isLeader) {
+                    drawCircle(
+                        color = SolarGold.copy(alpha = 0.45f),
+                        radius = 5.5f,
+                        center = Offset(bx, by),
+                    )
+                    drawCircle(
+                        color = SolarGold,
+                        radius = 3.2f,
+                        center = Offset(bx, by),
+                    )
+                } else {
+                    drawCircle(
+                        color = bot.color.copy(alpha = 0.90f),
+                        radius = 2.4f,
+                        center = Offset(bx, by),
+                    )
+                }
             }
 
             // Player position relative to 7000x7000 bounds
             val px = normX * w
             val py = normY * h
 
-            // Proximity warning halo when near arena wall
             val nearWall = normX < 0.06f || normX > 0.94f || normY < 0.06f || normY > 0.94f
             drawCircle(
-                color = (if (nearWall) DangerCrimson else accentColor).copy(alpha = 0.34f),
+                color = (if (nearWall) DangerCrimson else accentColor).copy(alpha = 0.36f),
                 radius = if (nearWall) 11f else 8.5f,
                 center = Offset(px, py),
             )
 
-            // Directional heading chevron
-            val tipX = px + cos(playerAngleRadians) * 7.0f
-            val tipY = py + sin(playerAngleRadians) * 7.0f
+            val tipX = px + cos(playerAngleRadians) * 7.2f
+            val tipY = py + sin(playerAngleRadians) * 7.2f
             val leftX = px + cos(playerAngleRadians + 2.45f) * 5.2f
             val leftY = py + sin(playerAngleRadians + 2.45f) * 5.2f
             val rightX = px + cos(playerAngleRadians - 2.45f) * 5.2f

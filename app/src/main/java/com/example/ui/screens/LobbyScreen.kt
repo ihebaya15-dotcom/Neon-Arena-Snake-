@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,14 +24,17 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.EmojiEvents
@@ -57,6 +61,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.game.model.SnakeSkin
@@ -65,6 +70,7 @@ import com.example.ui.theme.ArenaDeepNavy
 import com.example.ui.theme.GridLineBlue
 import com.example.ui.theme.HudBorderStroke
 import com.example.ui.theme.HudGlassSurface
+import com.example.ui.theme.NeonSnakeTheme
 import com.example.ui.theme.SolarGold
 import com.example.ui.theme.SpaceObsidian
 import com.example.ui.theme.TextPrimary
@@ -141,87 +147,102 @@ fun LobbyScreen(
             )
         }
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .widthIn(max = 560.dp)
-                .align(Alignment.Center)
-                .padding(horizontal = 24.dp, vertical = 20.dp),
+                .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
-            // Top Title + Best Score
+            val minContentHeight = maxHeight
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(top = 12.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 20.dp),
             ) {
-                Text(
-                    text = "NEON SNAKE",
-                    style = MaterialTheme.typography.displayMedium,
-                    color = animatedAccent,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = stringResource(R.string.lobby_subtitle),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextSecondary,
-                    textAlign = TextAlign.Center,
-                )
-
-                if (sessionBestScore > 0) {
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(HudGlassSurface)
-                            .border(1.dp, SolarGold.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
-                            .padding(horizontal = 16.dp, vertical = 7.dp),
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .widthIn(max = 560.dp)
+                        .fillMaxWidth()
+                        .heightIn(min = (minContentHeight - 40.dp).coerceAtLeast(0.dp)),
+                ) {
+                    // Top Title + Best Score
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(top = 8.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.EmojiEvents,
-                            contentDescription = null,
-                            tint = SolarGold,
-                            modifier = Modifier.size(18.dp),
-                        )
                         Text(
-                            text = stringResource(R.string.lobby_best_score, sessionBestScore),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = SolarGold,
+                            text = "NEON SNAKE",
+                            style = MaterialTheme.typography.displayMedium,
+                            color = animatedAccent,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.lobby_subtitle),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center,
+                        )
+
+                        if (sessionBestScore > 0) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(HudGlassSurface)
+                                    .border(1.dp, SolarGold.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+                                    .padding(horizontal = 16.dp, vertical = 7.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.EmojiEvents,
+                                    contentDescription = null,
+                                    tint = SolarGold,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Text(
+                                    text = stringResource(R.string.lobby_best_score, sessionBestScore),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = SolarGold,
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    // Live Interactive Snake Preview Card
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(190.dp)
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(HudGlassSurface)
+                            .border(
+                                width = 1.5.dp,
+                                color = animatedAccent.copy(alpha = 0.45f),
+                                shape = RoundedCornerShape(28.dp),
+                            ),
+                    ) {
+                        SnakePreviewCanvas(
+                            skin = selectedSkin,
+                            wavePhase = wavePhase,
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
-                }
-            }
 
-            // Live Interactive Snake Preview Card
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(190.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(HudGlassSurface)
-                    .border(
-                        width = 1.5.dp,
-                        color = animatedAccent.copy(alpha = 0.45f),
-                        shape = RoundedCornerShape(28.dp),
-                    ),
-            ) {
-                SnakePreviewCanvas(
-                    skin = selectedSkin,
-                    wavePhase = wavePhase,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+                    Spacer(modifier = Modifier.height(18.dp))
 
-            // Skin Picker + Play Button
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+                    // Skin Picker + Play Button
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                 Text(
                     text = stringResource(R.string.lobby_choose_skin),
                     style = MaterialTheme.typography.titleMedium,
@@ -283,6 +304,8 @@ fun LobbyScreen(
                     color = TextSecondary,
                     textAlign = TextAlign.Center,
                 )
+                    }
+                }
             }
         }
     }
@@ -419,5 +442,18 @@ private fun SnakePreviewCanvas(
                 center = Offset(eyePos.x + lookDx, eyePos.y + lookDy),
             )
         }
+    }
+}
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Composable
+private fun LobbyScreenPreview() {
+    NeonSnakeTheme {
+        LobbyScreen(
+            selectedSkin = SnakeSkins.CYBER_CYAN,
+            sessionBestScore = 1850,
+            onSelectSkin = {},
+            onStartGame = {},
+        )
     }
 }

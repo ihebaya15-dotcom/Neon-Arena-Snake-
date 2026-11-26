@@ -19,9 +19,25 @@ class FoodSpawner(
 
     fun ensureNaturalFoodCount(orbs: MutableList<FoodOrb>) {
         var naturalCount = 0
+        var lootCount = 0
         for (i in orbs.indices) {
-            if (!orbs[i].isBoostDrop) {
+            val orb = orbs[i]
+            if (!orb.isBoostDrop && !orb.isLootDrop) {
                 naturalCount++
+            } else if (orb.isLootDrop) {
+                lootCount++
+            }
+        }
+        // Trim oldest loot orbs if total loot exceeds cap after massive battles
+        if (lootCount > ArenaConfig.MAX_ACTIVE_LOOT_ORBS) {
+            var toRemove = lootCount - ArenaConfig.MAX_ACTIVE_LOOT_ORBS
+            var idx = 0
+            while (idx < orbs.size && toRemove > 0) {
+                if (orbs[idx].isLootDrop) {
+                    orbs[idx].isConsumed = true
+                    toRemove--
+                }
+                idx++
             }
         }
         while (naturalCount < ArenaConfig.TARGET_FOOD_COUNT) {
@@ -51,6 +67,30 @@ class FoodSpawner(
             colorIndex = colorIndex,
             pulsePhase = random.nextFloat() * (2f * PI.toFloat()),
             isBoostDrop = true,
+        )
+    }
+
+    fun createLootOrb(x: Float, y: Float, colorIndex: Int): FoodOrb {
+        val jitterX = (random.nextFloat() - 0.5f) * 22f
+        val jitterY = (random.nextFloat() - 0.5f) * 22f
+        val clampedX = (x + jitterX).coerceIn(
+            ArenaConfig.FOOD_SPAWN_MARGIN * 0.5f,
+            ArenaConfig.ARENA_WIDTH - ArenaConfig.FOOD_SPAWN_MARGIN * 0.5f,
+        )
+        val clampedY = (y + jitterY).coerceIn(
+            ArenaConfig.FOOD_SPAWN_MARGIN * 0.5f,
+            ArenaConfig.ARENA_HEIGHT - ArenaConfig.FOOD_SPAWN_MARGIN * 0.5f,
+        )
+        return FoodOrb(
+            id = nextOrbId++,
+            x = clampedX,
+            y = clampedY,
+            radius = ArenaConfig.LOOT_ORB_RADIUS,
+            points = ArenaConfig.LOOT_ORB_POINTS,
+            growthValue = ArenaConfig.LOOT_ORB_GROWTH,
+            colorIndex = colorIndex,
+            pulsePhase = random.nextFloat() * (2f * PI.toFloat()),
+            isLootDrop = true,
         )
     }
 

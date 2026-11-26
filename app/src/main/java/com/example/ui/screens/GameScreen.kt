@@ -44,8 +44,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.game.model.DeathReason
 import com.example.game.model.GamePhase
 import com.example.game.model.GameResult
 import com.example.ui.components.ArenaCanvas
@@ -55,6 +57,8 @@ import com.example.ui.components.VirtualJoystick
 import com.example.ui.theme.DangerCrimson
 import com.example.ui.theme.HudBorderStroke
 import com.example.ui.theme.HudGlassSurface
+import com.example.ui.theme.NeonCyan
+import com.example.ui.theme.NeonSnakeTheme
 import com.example.ui.theme.SolarGold
 import com.example.ui.theme.SpaceObsidian
 import com.example.ui.theme.TextPrimary
@@ -178,7 +182,14 @@ private fun GameOverOverlay(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = stringResource(R.string.game_over_reason_wall),
+                text = when (result.deathReason) {
+                    com.example.game.model.DeathReason.ARENA_BOUNDARY ->
+                        stringResource(R.string.game_over_reason_wall)
+                    com.example.game.model.DeathReason.ENEMY_BODY_COLLISION ->
+                        stringResource(R.string.game_over_reason_enemy, result.killerName.orEmpty())
+                    com.example.game.model.DeathReason.HEAD_ON_COLLISION ->
+                        stringResource(R.string.game_over_reason_head_on, result.killerName.orEmpty())
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
@@ -212,15 +223,15 @@ private fun GameOverOverlay(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 StatTile(
-                    label = stringResource(R.string.game_over_time_survived),
-                    value = formatDuration(result.survivedSeconds),
-                    valueColor = TextPrimary,
+                    label = stringResource(R.string.game_over_eliminations),
+                    value = result.eliminationsCount.toString(),
+                    valueColor = SolarGold,
                     modifier = Modifier.weight(1f),
                 )
                 StatTile(
-                    label = stringResource(R.string.game_over_food_eaten),
-                    value = result.foodEaten.toString(),
-                    valueColor = TextPrimary,
+                    label = stringResource(R.string.game_over_best_rank),
+                    value = "#${result.bestRank}",
+                    valueColor = accentColor,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -309,8 +320,61 @@ private fun StatTile(
     }
 }
 
-private fun formatDuration(totalSeconds: Int): String {
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%02d:%02d".format(minutes, seconds)
+@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Composable
+private fun GameScreenPlayingPreview() {
+    NeonSnakeTheme {
+        val previewEngine = androidx.compose.runtime.remember {
+            com.example.game.engine.ArenaEngine().apply {
+                startNewGame(com.example.game.model.SnakeSkins.CYBER_CYAN, currentBestScore = 1850)
+            }
+        }
+        val snapshot = androidx.compose.runtime.remember {
+            previewEngine.buildHudSnapshot(forceRefreshFoodBlips = true)
+        }
+        Box(modifier = Modifier.fillMaxSize()) {
+            ArenaCanvas(engine = previewEngine, frameTick = 1L)
+            GameHud(
+                snapshot = snapshot,
+                accentColor = NeonCyan,
+                onBackToLobby = {},
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+            BoostToggleButton(
+                isBoostActive = false,
+                canBoost = true,
+                showMinLengthWarning = false,
+                accentColor = NeonCyan,
+                onToggleBoost = {},
+                modifier = Modifier
+                    .align(AbsoluteAlignment.BottomLeft)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 22.dp, vertical = 28.dp),
+            )
+        }
+    }
 }
+
+@Preview(showBackground = true, widthDp = 390, heightDp = 844)
+@Composable
+private fun GameOverOverlayPreview() {
+    NeonSnakeTheme {
+        GameOverOverlay(
+            result = GameResult(
+                finalScore = 2460,
+                peakLength = 64,
+                survivedSeconds = 95,
+                foodEaten = 48,
+                eliminationsCount = 4,
+                bestRank = 1,
+                isNewBest = true,
+                deathReason = DeathReason.ENEMY_BODY_COLLISION,
+                killerName = "APEX-9",
+            ),
+            accentColor = NeonCyan,
+            onReplay = {},
+            onChangeSkin = {},
+        )
+    }
+}
+
