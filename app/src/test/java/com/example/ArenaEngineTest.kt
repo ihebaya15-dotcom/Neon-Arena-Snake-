@@ -4,6 +4,7 @@ import com.example.game.engine.ArenaEngine
 import com.example.game.engine.EngineStepOutcome
 import com.example.game.model.ArenaConfig
 import com.example.game.model.DeathReason
+import com.example.game.model.FoodOrb
 import com.example.game.model.SnakeSkins
 import kotlin.math.hypot
 import org.junit.Assert.assertEquals
@@ -14,7 +15,7 @@ import org.junit.Test
 
 class ArenaEngineTest {
     @Test
-    fun startNewGame_spawnsPlayerCenteredAnd150FoodOrbs() {
+    fun startNewGame_spawnsPlayerCenteredAnd750FoodOrbsInSpatialGrid() {
         val engine = ArenaEngine()
         engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0)
 
@@ -24,7 +25,52 @@ class ArenaEngineTest {
         assertEquals(ArenaConfig.ARENA_HEIGHT / 2f, player.headY, 0.01f)
         assertEquals(ArenaConfig.INITIAL_SEGMENT_COUNT, player.segments.size)
         assertTrue(player.pathHistory.size > ArenaConfig.INITIAL_SEGMENT_COUNT)
+        assertEquals(750, ArenaConfig.TARGET_FOOD_COUNT)
         assertEquals(ArenaConfig.TARGET_FOOD_COUNT, engine.foodOrbs.size)
+
+        // Verify 7000x7000 partitioned into 500x500 cells (14x14 = 196 buckets)
+        assertEquals(14, engine.spatialGrid.cols)
+        assertEquals(14, engine.spatialGrid.rows)
+        assertEquals(196, engine.spatialGrid.totalCells)
+
+        val queriedSnakes = mutableListOf<String>()
+        engine.spatialGrid.forEachSnakeInBounds(3000f, 3000f, 4000f, 4000f) { snake ->
+            queriedSnakes.add(snake.id)
+        }
+        assertEquals(listOf(ArenaEngine.PLAYER_ID), queriedSnakes)
+    }
+
+    @Test
+    fun spatialGrid_queriesOnlyLocal500x500Buckets() {
+        val engine = ArenaEngine()
+        engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0)
+
+        val nearOrb = FoodOrb(
+            id = 9001,
+            x = 260f,
+            y = 260f,
+            radius = 8f,
+            points = 10,
+            growthValue = 0.5f,
+            colorIndex = 0,
+            pulsePhase = 0f,
+        )
+        val farOrb = FoodOrb(
+            id = 9002,
+            x = 6400f,
+            y = 6400f,
+            radius = 8f,
+            points = 10,
+            growthValue = 0.5f,
+            colorIndex = 0,
+            pulsePhase = 0f,
+        )
+        engine.spatialGrid.rebuildFoodGrid(listOf(nearOrb, farOrb))
+
+        val queried = mutableListOf<FoodOrb>()
+        engine.spatialGrid.queryFoodInRadius(250f, 250f, 100f, queried)
+        assertEquals(1, queried.size)
+        assertEquals(9001, queried.first().id)
     }
 
     @Test

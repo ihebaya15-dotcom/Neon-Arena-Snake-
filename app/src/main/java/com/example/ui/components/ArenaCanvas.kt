@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import com.example.game.engine.ArenaEngine
+import com.example.game.engine.ArenaSpatialGrid
 import com.example.game.model.ArenaConfig
 import com.example.game.model.FoodOrb
 import com.example.game.model.SnakeEntity
@@ -95,7 +96,7 @@ fun ArenaCanvas(
             )
 
             drawVisibleFoodOrbs(
-                orbs = engine.foodOrbs,
+                spatialGrid = engine.spatialGrid,
                 viewLeft = viewLeft,
                 viewRight = viewRight,
                 viewTop = viewTop,
@@ -103,10 +104,14 @@ fun ArenaCanvas(
                 worldTime = engine.worldTimeSeconds,
             )
 
-            val snakes = engine.snakes
-            for (i in snakes.indices) {
+            engine.spatialGrid.forEachSnakeInBounds(
+                minX = viewLeft,
+                minY = viewTop,
+                maxX = viewRight,
+                maxY = viewBottom,
+            ) { snake ->
                 drawSnake(
-                    snake = snakes[i],
+                    snake = snake,
                     worldTime = engine.worldTimeSeconds,
                 )
             }
@@ -212,38 +217,41 @@ private fun DrawScope.drawArenaBorders(
 }
 
 private fun DrawScope.drawVisibleFoodOrbs(
-    orbs: List<FoodOrb>,
+    spatialGrid: ArenaSpatialGrid,
     viewLeft: Float,
     viewRight: Float,
     viewTop: Float,
     viewBottom: Float,
     worldTime: Float,
 ) {
-    for (i in orbs.indices) {
-        val orb = orbs[i]
-        if (orb.x < viewLeft || orb.x > viewRight || orb.y < viewTop || orb.y > viewBottom) {
-            continue
-        }
-        val color = OrbPalette[orb.colorIndex % OrbPalette.size]
-        val pulse = 1f + 0.14f * sin(worldTime * 4.0f + orb.pulsePhase)
-        val r = orb.radius * pulse
-        val center = Offset(orb.x, orb.y)
+    spatialGrid.forEachFoodInBounds(
+        minX = viewLeft,
+        minY = viewTop,
+        maxX = viewRight,
+        maxY = viewBottom,
+    ) { orb ->
+        if (orb.x >= viewLeft && orb.x <= viewRight && orb.y >= viewTop && orb.y <= viewBottom) {
+            val color = OrbPalette[orb.colorIndex % OrbPalette.size]
+            val pulse = 1f + 0.14f * sin(worldTime * 4.0f + orb.pulsePhase)
+            val r = orb.radius * pulse
+            val center = Offset(orb.x, orb.y)
 
-        drawCircle(
-            color = color.copy(alpha = if (orb.isBoostDrop) 0.18f else 0.24f),
-            radius = r * 2.25f,
-            center = center,
-        )
-        drawCircle(
-            color = color.copy(alpha = 0.90f),
-            radius = r,
-            center = center,
-        )
-        drawCircle(
-            color = Color.White.copy(alpha = 0.85f),
-            radius = r * 0.42f,
-            center = center,
-        )
+            drawCircle(
+                color = color.copy(alpha = if (orb.isBoostDrop) 0.18f else 0.24f),
+                radius = r * 2.25f,
+                center = center,
+            )
+            drawCircle(
+                color = color.copy(alpha = 0.90f),
+                radius = r,
+                center = center,
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.85f),
+                radius = r * 0.42f,
+                center = center,
+            )
+        }
     }
 }
 

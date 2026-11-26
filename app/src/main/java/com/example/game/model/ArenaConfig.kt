@@ -4,8 +4,9 @@ object ArenaConfig {
     const val ARENA_WIDTH = 7000f
     const val ARENA_HEIGHT = 7000f
     const val GRID_CELL_SIZE = 140f
+    const val SPATIAL_CELL_SIZE = 500f
 
-    const val TARGET_FOOD_COUNT = 150
+    const val TARGET_FOOD_COUNT = 750
     const val FOOD_SPAWN_MARGIN = 90f
     const val FOOD_MAGNET_RADIUS = 58f
     const val FOOD_EAT_RADIUS = 26f

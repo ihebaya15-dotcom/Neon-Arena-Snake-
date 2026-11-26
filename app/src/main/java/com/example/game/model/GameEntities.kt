@@ -15,6 +15,7 @@ data class FoodOrb(
     val colorIndex: Int,
     val pulsePhase: Float,
     val isBoostDrop: Boolean = false,
+    var isConsumed: Boolean = false,
 )
 
 data class SnakeEntity(

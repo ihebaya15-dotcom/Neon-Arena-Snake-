@@ -14,6 +14,7 @@ interface ArenaWorldView {
     val arenaHeight: Float
     val foodOrbs: List<FoodOrb>
     val snakes: List<SnakeEntity>
+    val spatialGrid: ArenaSpatialGrid
 }
 
 /**

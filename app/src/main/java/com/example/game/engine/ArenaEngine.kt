@@ -26,6 +26,7 @@ sealed interface EngineStepOutcome {
 class ArenaEngine(
     private val foodSpawner: FoodSpawner = FoodSpawner(),
     private val cameraController: CameraController = CameraController(),
+    override val spatialGrid: ArenaSpatialGrid = ArenaSpatialGrid(),
 ) : ArenaWorldView {
 
     override val arenaWidth: Float = ArenaConfig.ARENA_WIDTH
@@ -38,6 +39,7 @@ class ArenaEngine(
     override val snakes: List<SnakeEntity> get() = _snakes
 
     private val controllers = mutableMapOf<String, SnakeController>()
+    private val nearbyFoodQueryBuffer = ArrayList<FoodOrb>(32)
     val playerController = HumanJoystickController()
 
     val camera = CameraState()
@@ -110,6 +112,8 @@ class ArenaEngine(
         peakLength = initialSegments.size
 
         foodSpawner.populateInitialFood(_foodOrbs)
+        spatialGrid.rebuildFoodGrid(_foodOrbs)
+        spatialGrid.rebuildSnakeGrid(_snakes)
         cameraController.snapTo(camera, player)
     }
 
@@ -162,7 +166,22 @@ class ArenaEngine(
             updateFoodInteractions(snake, dt)
         }
 
+        // Remove consumed orbs in one pass, replenish to TARGET_FOOD_COUNT (750),
+        // and refresh the 500x500 spatial buckets for rendering & next-frame queries.
+        var writeIdx = 0
+        for (i in _foodOrbs.indices) {
+            val orb = _foodOrbs[i]
+            if (!orb.isConsumed) {
+                _foodOrbs[writeIdx++] = orb
+            }
+        }
+        if (writeIdx < _foodOrbs.size) {
+            _foodOrbs.subList(writeIdx, _foodOrbs.size).clear()
+        }
+
         foodSpawner.ensureNaturalFoodCount(_foodOrbs)
+        spatialGrid.rebuildFoodGrid(_foodOrbs)
+        spatialGrid.rebuildSnakeGrid(_snakes)
         cameraController.update(camera, player, dt)
         return EngineStepOutcome.Running
     }
@@ -190,12 +209,19 @@ class ArenaEngine(
             return ArenaHudSnapshot(bestScore = sessionBestScore)
         }
         val canBoost = player.targetLength > ArenaConfig.MIN_BOOST_SEGMENT_COUNT + 0.25f
-        val blips = _foodOrbs.map { orb ->
-            MiniMapBlip(
-                normX = (orb.x / arenaWidth).coerceIn(0f, 1f),
-                normY = (orb.y / arenaHeight).coerceIn(0f, 1f),
-                isLargeOrb = orb.points >= 50,
-            )
+        val blips = ArrayList<MiniMapBlip>(320)
+        for (i in _foodOrbs.indices) {
+            val orb = _foodOrbs[i]
+            // Include all high-value orbs and sample small orbs for a crisp, fast radar
+            if (orb.points >= 25 || (orb.id and 1) == 0) {
+                blips.add(
+                    MiniMapBlip(
+                        normX = (orb.x / arenaWidth).coerceIn(0f, 1f),
+                        normY = (orb.y / arenaHeight).coerceIn(0f, 1f),
+                        isLargeOrb = orb.points >= 50,
+                    ),
+                )
+            }
         }
         return ArenaHudSnapshot(
             score = player.score,
@@ -406,9 +432,17 @@ class ArenaEngine(
         val eatRadius = ArenaConfig.FOOD_EAT_RADIUS + (snake.headRadius - ArenaConfig.BASE_HEAD_RADIUS)
         val pullSpeed = 420f * dt
 
-        var idx = _foodOrbs.lastIndex
-        while (idx >= 0) {
-            val orb = _foodOrbs[idx]
+        spatialGrid.queryFoodInRadius(
+            centerX = snake.headX,
+            centerY = snake.headY,
+            radius = magnetRadius + 24f,
+            outOrbs = nearbyFoodQueryBuffer,
+        )
+
+        for (i in nearbyFoodQueryBuffer.indices) {
+            val orb = nearbyFoodQueryBuffer[i]
+            if (orb.isConsumed) continue
+
             val dx = snake.headX - orb.x
             val dy = snake.headY - orb.y
             val distSq = dx * dx + dy * dy
@@ -418,7 +452,7 @@ class ArenaEngine(
                 snake.score += orb.points
                 snake.targetLength += orb.growthValue
                 snake.foodEatenCount += 1
-                _foodOrbs.removeAt(idx)
+                orb.isConsumed = true
             } else if (distSq <= magnetRadius * magnetRadius) {
                 val dist = hypot(dx, dy)
                 if (dist > 0.001f) {
@@ -427,7 +461,6 @@ class ArenaEngine(
                     orb.y += (dy / dist) * step
                 }
             }
-            idx--
         }
     }
 
