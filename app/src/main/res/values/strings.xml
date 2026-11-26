@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">Neon Snake</string>
+    <string name="lobby_subtitle">ساحة النيون التنافسية</string>
+    <string name="lobby_choose_skin">اختر طيف النيون</string>
+    <string name="lobby_best_score">أعلى نتيجة: %1$d</string>
+    <string name="lobby_start_play">ابدأ اللعب</string>
+    <string name="lobby_controls_hint">اسحب في أي مكان للتوجيه 360° • زر التسريع بالأسفل</string>
+    <string name="hud_score_label">النقاط</string>
+    <string name="hud_length_label">الطول</string>
+    <string name="hud_minimap_cd">خريطة الساحة المصغرة</string>
+    <string name="joystick_hint">المس واسحب للتوجيه</string>
+    <string name="boost_label">تسريع</string>
+    <string name="boost_active_label">نشط</string>
+    <string name="boost_min_length_warning">الطول عند الحد الأدنى</string>
+    <string name="game_over_title">انتهت الجولة</string>
+    <string name="game_over_reason_wall">اصطدام بحدود الساحة</string>
+    <string name="game_over_reason_self">اصطدام بجسم الثعبان</string>
+    <string name="game_over_final_score">النتيجة النهائية</string>
+    <string name="game_over_peak_length">أقصى طول</string>
+    <string name="game_over_time_survived">مدة البقاء</string>
+    <string name="game_over_food_eaten">طاقة مجموعة</string>
+    <string name="game_over_replay">العب مجدداً</string>
+    <string name="game_over_change_skin">تغيير المظهر</string>
+    <string name="cd_back_to_lobby">العودة للقائمة الرئيسية</string>
+</resources>

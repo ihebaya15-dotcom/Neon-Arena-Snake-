@@ -1,0 +1,6 @@
+{
+  "name": "Neon Snake",
+  "description": "High-speed 60 FPS neon arcade snake arena game in Kotlin and Jetpack Compose.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
