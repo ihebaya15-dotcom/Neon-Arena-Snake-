@@ -31,6 +31,7 @@ class GameViewModel : ViewModel() {
     val frameTick = mutableLongStateOf(0L)
 
     private var hudRefreshCounter = 0
+    private var lastHudScore = 0
 
     fun selectSkin(skin: SnakeSkin) {
         _uiState.update { it.copy(selectedSkin = skin) }
@@ -43,11 +44,12 @@ class GameViewModel : ViewModel() {
             currentBestScore = currentState.sessionBestScore,
         )
         hudRefreshCounter = 0
+        lastHudScore = 0
         frameTick.longValue = 1L
         _uiState.update {
             it.copy(
                 phase = GamePhase.Playing,
-                hudSnapshot = engine.buildHudSnapshot(),
+                hudSnapshot = engine.buildHudSnapshot(forceRefreshFoodBlips = true),
             )
         }
     }
@@ -73,9 +75,11 @@ class GameViewModel : ViewModel() {
         when (val outcome = engine.step(dtSeconds)) {
             EngineStepOutcome.Running -> {
                 frameTick.longValue += 1L
+                val currentScore = engine.playerSnake?.score ?: 0
                 hudRefreshCounter++
-                if (hudRefreshCounter >= 2) {
+                if (hudRefreshCounter >= 6 || currentScore != lastHudScore) {
                     hudRefreshCounter = 0
+                    lastHudScore = currentScore
                     _uiState.update { it.copy(hudSnapshot = engine.buildHudSnapshot()) }
                 }
             }

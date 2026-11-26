@@ -14,7 +14,6 @@
     <string name="boost_min_length_warning">الطول عند الحد الأدنى</string>
     <string name="game_over_title">انتهت الجولة</string>
     <string name="game_over_reason_wall">اصطدام بحدود الساحة</string>
-    <string name="game_over_reason_self">اصطدام بجسم الثعبان</string>
     <string name="game_over_final_score">النتيجة النهائية</string>
     <string name="game_over_peak_length">أقصى طول</string>
     <string name="game_over_time_survived">مدة البقاء</string>

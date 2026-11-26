@@ -178,12 +178,7 @@ private fun GameOverOverlay(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = when (result.deathReason) {
-                    com.example.game.model.DeathReason.ARENA_BOUNDARY ->
-                        stringResource(R.string.game_over_reason_wall)
-                    com.example.game.model.DeathReason.SELF_COLLISION ->
-                        stringResource(R.string.game_over_reason_self)
-                },
+                text = stringResource(R.string.game_over_reason_wall),
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,

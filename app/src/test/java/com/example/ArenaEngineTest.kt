@@ -5,11 +5,13 @@ import com.example.game.engine.EngineStepOutcome
 import com.example.game.model.ArenaConfig
 import com.example.game.model.DeathReason
 import com.example.game.model.FoodOrb
+import com.example.game.model.PathRingBuffer
 import com.example.game.model.SnakeSkins
 import kotlin.math.hypot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,6 +40,29 @@ class ArenaEngineTest {
             queriedSnakes.add(snake.id)
         }
         assertEquals(listOf(ArenaEngine.PLAYER_ID), queriedSnakes)
+    }
+
+    @Test
+    fun pathRingBuffer_handlesWrapAroundAndGrowCleanly() {
+        val buffer = PathRingBuffer(initialCapacity = 16)
+        for (i in 0 until 24) {
+            buffer.pushNewest(i.toFloat(), i * 2f)
+            if (buffer.size > 10) {
+                buffer.dropOldest(1)
+            }
+        }
+        assertEquals(10, buffer.size)
+        assertEquals(23f, buffer.xFromNewest(0), 0.01f)
+        assertEquals(46f, buffer.yFromNewest(0), 0.01f)
+        assertEquals(14f, buffer.oldestX(), 0.01f)
+
+        // Force capacity grow after wrap-around
+        for (i in 24 until 44) {
+            buffer.pushNewest(i.toFloat(), i * 2f)
+        }
+        assertEquals(30, buffer.size)
+        assertEquals(43f, buffer.xFromNewest(0), 0.01f)
+        assertEquals(14f, buffer.oldestX(), 0.01f)
     }
 
     @Test
@@ -74,6 +99,16 @@ class ArenaEngineTest {
     }
 
     @Test
+    fun buildHudSnapshot_reusesCachedFoodBlipsAcrossIntermediateFrames() {
+        val engine = ArenaEngine()
+        engine.startNewGame(SnakeSkins.CYBER_CYAN, currentBestScore = 0)
+
+        val first = engine.buildHudSnapshot()
+        val second = engine.buildHudSnapshot()
+        assertSame(first.foodBlips, second.foodBlips)
+    }
+
+    @Test
     fun joystickVector_rotatesSnakeAndBoostStopsAtMinimumLength() {
         val engine = ArenaEngine()
         engine.startNewGame(SnakeSkins.PLASMA_MAGENTA, currentBestScore = 0)
@@ -82,7 +117,6 @@ class ArenaEngineTest {
         val toggledOn = engine.togglePlayerBoost()
         assertTrue(toggledOn)
 
-        // Step repeatedly until boost drains snake to MIN_BOOST_SEGMENT_COUNT
         repeat(160) {
             engine.step(0.03f)
         }
@@ -95,15 +129,13 @@ class ArenaEngineTest {
     }
 
     @Test
-    fun pathHistory_keepsConsistentSegmentSpacingOnSharpTurnWithoutFalseSelfCollision() {
+    fun pathHistory_keepsConsistentSegmentSpacingOnSharpTurn() {
         val engine = ArenaEngine()
         engine.startNewGame(SnakeSkins.SOLAR_GOLD, currentBestScore = 0)
 
-        // Sharp right turn should curve smoothly without false-triggering self-collision on neck
         engine.playerController.updateJoystickVector(1f, 0f)
-        var outcome: EngineStepOutcome = EngineStepOutcome.Running
         repeat(25) {
-            outcome = engine.step(0.03f)
+            val outcome = engine.step(0.03f)
             assertTrue(outcome is EngineStepOutcome.Running)
         }
 
@@ -117,40 +149,29 @@ class ArenaEngineTest {
     }
 
     @Test
-    fun loopingBackIntoBody_triggersSelfCollisionGameOver() {
+    fun loopingBackIntoOwnBody_doesNotKillPlayer() {
         val engine = ArenaEngine()
         engine.startNewGame(SnakeSkins.ULTRAVIOLET, currentBestScore = 0)
 
-        // Grow snake long enough to cross back over its own body trail
         val player = engine.playerSnake!!
         player.targetLength = 90f
 
-        // Move straight up first to build a long vertical body trail
         engine.playerController.updateJoystickVector(0f, -1f)
         repeat(50) {
-            val res = engine.step(0.03f)
-            assertTrue(res is EngineStepOutcome.Running)
+            assertTrue(engine.step(0.03f) is EngineStepOutcome.Running)
         }
 
-        // Turn right, then down, then left sharply across the vertical body
         val directions = listOf(
             Triple(1f, 0f, 18),
             Triple(0f, 1f, 18),
             Triple(-1f, 0f, 35),
         )
-        var outcome: EngineStepOutcome = EngineStepOutcome.Running
         for ((vx, vy, steps) in directions) {
             engine.playerController.updateJoystickVector(vx, vy)
             repeat(steps) {
-                if (outcome is EngineStepOutcome.Running) {
-                    outcome = engine.step(0.03f)
-                }
+                assertTrue(engine.step(0.03f) is EngineStepOutcome.Running)
             }
         }
-
-        assertTrue("Expected game over from self-collision", outcome is EngineStepOutcome.Ended)
-        val ended = outcome as EngineStepOutcome.Ended
-        assertEquals(DeathReason.SELF_COLLISION, ended.result.deathReason)
     }
 
     @Test
@@ -160,7 +181,6 @@ class ArenaEngineTest {
         assertEquals(7000f, engine.arenaWidth, 0.01f)
         assertEquals(7000f, engine.arenaHeight, 0.01f)
 
-        // Move straight up (-PI/2) until hitting top wall (y <= 0)
         var outcome: EngineStepOutcome = EngineStepOutcome.Running
         repeat(600) {
             if (outcome is EngineStepOutcome.Running) {

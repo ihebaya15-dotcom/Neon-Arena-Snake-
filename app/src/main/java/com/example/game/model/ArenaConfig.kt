@@ -20,8 +20,6 @@ object ArenaConfig {
     const val MIN_BOOST_SEGMENT_COUNT = 12
     const val SEGMENT_SPACING = 13.5f
     const val PATH_SAMPLE_STEP = 4.0f
-    const val SELF_COLLISION_SKIP_SEGMENTS = 7
-    const val SELF_COLLISION_HITBOX_SCALE = 0.78f
     const val BASE_HEAD_RADIUS = 17f
     const val BASE_BODY_RADIUS = 14.5f
 

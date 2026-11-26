@@ -8,6 +8,7 @@ import com.example.game.model.DeathReason
 import com.example.game.model.FoodOrb
 import com.example.game.model.GameResult
 import com.example.game.model.MiniMapBlip
+import com.example.game.model.PathRingBuffer
 import com.example.game.model.SnakeEntity
 import com.example.game.model.SnakeSkin
 import com.example.game.model.SnakeSkins
@@ -52,6 +53,8 @@ class ArenaEngine(
     private var sessionBestScore: Int = 0
     private var boostDropAccumulatorSec: Float = 0f
     private var boostBlockedWarningTimerSec: Float = 0f
+    private var cachedFoodBlips: List<MiniMapBlip> = emptyList()
+    private var foodBlipRefreshCounter: Int = 0
 
     val playerSnake: SnakeEntity?
         get() = _snakes.firstOrNull { it.isPlayer }
@@ -81,12 +84,13 @@ class ArenaEngine(
             )
         }
 
-        // Seed pathHistory oldest-to-newest so index 0 is tail-end and last() is current head
+        // Seed PathRingBuffer oldest-to-newest so index 0 is tail-end and newest is head
         val totalInitialPathDist = (ArenaConfig.INITIAL_SEGMENT_COUNT + 4) * ArenaConfig.SEGMENT_SPACING
         val sampleCount = (totalInitialPathDist / ArenaConfig.PATH_SAMPLE_STEP).toInt().coerceAtLeast(2)
-        val initialPath = MutableList(sampleCount + 1) { stepIdx ->
+        val initialPath = PathRingBuffer(initialCapacity = 1024)
+        for (stepIdx in 0..sampleCount) {
             val distFromHead = (sampleCount - stepIdx) * ArenaConfig.PATH_SAMPLE_STEP
-            Vec2(
+            initialPath.pushNewest(
                 x = startX - cos(startAngle) * distFromHead,
                 y = startY - sin(startAngle) * distFromHead,
             )
@@ -114,6 +118,8 @@ class ArenaEngine(
         foodSpawner.populateInitialFood(_foodOrbs)
         spatialGrid.rebuildFoodGrid(_foodOrbs)
         spatialGrid.rebuildSnakeGrid(_snakes)
+        cachedFoodBlips = rebuildMiniMapFoodBlips()
+        foodBlipRefreshCounter = 0
         cameraController.snapTo(camera, player)
     }
 
@@ -143,24 +149,17 @@ class ArenaEngine(
             val input = controller.sampleInput(snake, this, dt)
             updateSnakeMovement(snake, input, dt)
 
-            if (snake.isPlayer) {
-                val deathReason = when {
-                    isOutsideArena(snake) -> DeathReason.ARENA_BOUNDARY
-                    hasSelfCollision(snake) -> DeathReason.SELF_COLLISION
-                    else -> null
-                }
-                if (deathReason != null) {
-                    val isNewBest = snake.score > sessionBestScore
-                    val result = GameResult(
-                        finalScore = snake.score,
-                        peakLength = peakLength,
-                        survivedSeconds = elapsedPlaySeconds.toInt(),
-                        foodEaten = snake.foodEatenCount,
-                        isNewBest = isNewBest,
-                        deathReason = deathReason,
-                    )
-                    return EngineStepOutcome.Ended(result)
-                }
+            if (snake.isPlayer && isOutsideArena(snake)) {
+                val isNewBest = snake.score > sessionBestScore
+                val result = GameResult(
+                    finalScore = snake.score,
+                    peakLength = peakLength,
+                    survivedSeconds = elapsedPlaySeconds.toInt(),
+                    foodEaten = snake.foodEatenCount,
+                    isNewBest = isNewBest,
+                    deathReason = DeathReason.ARENA_BOUNDARY,
+                )
+                return EngineStepOutcome.Ended(result)
             }
 
             updateFoodInteractions(snake, dt)
@@ -203,26 +202,19 @@ class ArenaEngine(
         }
     }
 
-    fun buildHudSnapshot(): ArenaHudSnapshot {
+    fun buildHudSnapshot(forceRefreshFoodBlips: Boolean = false): ArenaHudSnapshot {
         val player = playerSnake
         if (player == null) {
             return ArenaHudSnapshot(bestScore = sessionBestScore)
         }
         val canBoost = player.targetLength > ArenaConfig.MIN_BOOST_SEGMENT_COUNT + 0.25f
-        val blips = ArrayList<MiniMapBlip>(320)
-        for (i in _foodOrbs.indices) {
-            val orb = _foodOrbs[i]
-            // Include all high-value orbs and sample small orbs for a crisp, fast radar
-            if (orb.points >= 25 || (orb.id and 1) == 0) {
-                blips.add(
-                    MiniMapBlip(
-                        normX = (orb.x / arenaWidth).coerceIn(0f, 1f),
-                        normY = (orb.y / arenaHeight).coerceIn(0f, 1f),
-                        isLargeOrb = orb.points >= 50,
-                    ),
-                )
-            }
+
+        foodBlipRefreshCounter++
+        if (forceRefreshFoodBlips || cachedFoodBlips.isEmpty() || foodBlipRefreshCounter >= 8) {
+            foodBlipRefreshCounter = 0
+            cachedFoodBlips = rebuildMiniMapFoodBlips()
         }
+
         return ArenaHudSnapshot(
             score = player.score,
             length = player.segments.size,
@@ -238,8 +230,25 @@ class ArenaEngine(
             playerNormX = (player.headX / arenaWidth).coerceIn(0f, 1f),
             playerNormY = (player.headY / arenaHeight).coerceIn(0f, 1f),
             playerAngleRadians = player.angleRadians,
-            foodBlips = blips,
+            foodBlips = cachedFoodBlips,
         )
+    }
+
+    private fun rebuildMiniMapFoodBlips(): List<MiniMapBlip> {
+        val blips = ArrayList<MiniMapBlip>(400)
+        for (i in _foodOrbs.indices) {
+            val orb = _foodOrbs[i]
+            if (orb.points >= 25 || (orb.id and 1) == 0) {
+                blips.add(
+                    MiniMapBlip(
+                        normX = (orb.x / arenaWidth).coerceIn(0f, 1f),
+                        normY = (orb.y / arenaHeight).coerceIn(0f, 1f),
+                        isLargeOrb = orb.points >= 50,
+                    ),
+                )
+            }
+        }
+        return blips
     }
 
     private fun updateSnakeMovement(
@@ -321,110 +330,87 @@ class ArenaEngine(
 
     private fun updateSegmentsChain(snake: SnakeEntity) {
         val path = snake.pathHistory
-        if (path.isEmpty()) {
-            path.add(Vec2(snake.headX, snake.headY))
+        if (path.size == 0) {
+            path.pushNewest(snake.headX, snake.headY)
         } else {
-            val tip = path.last()
-            val dx = snake.headX - tip.x
-            val dy = snake.headY - tip.y
+            val tipX = path.xFromNewest(0)
+            val tipY = path.yFromNewest(0)
+            val dx = snake.headX - tipX
+            val dy = snake.headY - tipY
             val dist = hypot(dx, dy)
             if (dist >= ArenaConfig.PATH_SAMPLE_STEP) {
                 val steps = (dist / ArenaConfig.PATH_SAMPLE_STEP).toInt().coerceAtLeast(1)
                 for (s in 1..steps) {
                     val t = s.toFloat() / steps
-                    path.add(
-                        Vec2(
-                            x = tip.x + dx * t,
-                            y = tip.y + dy * t,
-                        ),
+                    path.pushNewest(
+                        x = tipX + dx * t,
+                        y = tipY + dy * t,
                     )
                 }
             } else if (dist > 0.0001f) {
-                // Keep exact live head coordinate at the tip for zero-lag visual alignment
-                path.add(Vec2(snake.headX, snake.headY))
+                path.pushNewest(snake.headX, snake.headY)
             }
         }
 
         val desiredCount = snake.targetLength.toInt().coerceAtLeast(ArenaConfig.MIN_BOOST_SEGMENT_COUNT)
         val segments = snake.segments
         while (segments.size < desiredCount) {
-            val last = segments.lastOrNull() ?: Vec2(snake.headX, snake.headY)
-            segments.add(Vec2(last.x, last.y))
+            val last = segments.lastOrNull()
+            segments.add(Vec2(last?.x ?: snake.headX, last?.y ?: snake.headY))
         }
         while (segments.size > desiredCount && segments.size > ArenaConfig.MIN_BOOST_SEGMENT_COUNT) {
             segments.removeAt(segments.lastIndex)
         }
 
-        // Segment 0 is always the head
         segments[0].x = snake.headX
         segments[0].y = snake.headY
 
-        // Walk backwards along pathHistory from head (lastIndex) to place each segment
-        // at exact arc-length intervals (i * SEGMENT_SPACING) with smooth linear interpolation.
+        // Walk backwards through the primitive ring buffer with zero allocations
         val spacing = ArenaConfig.SEGMENT_SPACING
-        var pathIdx = path.lastIndex
+        var reverseIdx = 0
+        val maxReverseIdx = path.size - 2
         var accumulatedArc = 0f
         var segIdx = 1
-        var oldestUsedPathIdx = pathIdx
+        var oldestUsedReverseIdx = 0
 
-        while (segIdx < segments.size && pathIdx > 0) {
+        while (segIdx < segments.size && reverseIdx <= maxReverseIdx) {
             val targetArc = segIdx * spacing
-            val newer = path[pathIdx]
-            val older = path[pathIdx - 1]
-            val segLen = hypot(newer.x - older.x, newer.y - older.y)
+            val newerX = path.xFromNewest(reverseIdx)
+            val newerY = path.yFromNewest(reverseIdx)
+            val olderX = path.xFromNewest(reverseIdx + 1)
+            val olderY = path.yFromNewest(reverseIdx + 1)
+            val segLen = hypot(newerX - olderX, newerY - olderY)
 
             if (accumulatedArc + segLen >= targetArc && segLen > 0.0001f) {
                 val remaining = targetArc - accumulatedArc
                 val t = (remaining / segLen).coerceIn(0f, 1f)
-                segments[segIdx].x = newer.x + (older.x - newer.x) * t
-                segments[segIdx].y = newer.y + (older.y - newer.y) * t
-                oldestUsedPathIdx = pathIdx - 1
+                segments[segIdx].x = newerX + (olderX - newerX) * t
+                segments[segIdx].y = newerY + (olderY - newerY) * t
+                oldestUsedReverseIdx = reverseIdx + 1
                 segIdx++
             } else {
                 accumulatedArc += segLen
-                pathIdx--
-                oldestUsedPathIdx = pathIdx
+                reverseIdx++
+                oldestUsedReverseIdx = reverseIdx
             }
         }
 
-        // If snake grew faster than current path buffer, extend smoothly from oldest point
-        val fallback = path.firstOrNull() ?: Vec2(snake.headX, snake.headY)
-        while (segIdx < segments.size) {
-            segments[segIdx].x = fallback.x
-            segments[segIdx].y = fallback.y
-            segIdx++
-        }
-
-        // Prune stale history beyond the tail (keep a small buffer for growth)
-        val pruneCount = oldestUsedPathIdx - 16
-        if (pruneCount > 24) {
-            path.subList(0, pruneCount).clear()
-        }
-    }
-
-    private fun hasSelfCollision(snake: SnakeEntity): Boolean {
-        val segments = snake.segments
-        if (segments.size <= ArenaConfig.SELF_COLLISION_SKIP_SEGMENTS) return false
-
-        val headX = snake.headX
-        val headY = snake.headY
-        val baseThreshold = (snake.headRadius + snake.bodyRadius) * ArenaConfig.SELF_COLLISION_HITBOX_SCALE
-
-        for (i in ArenaConfig.SELF_COLLISION_SKIP_SEGMENTS until segments.size) {
-            val tailProgress = (segments.lastIndex - i).coerceAtMost(5) / 5f
-            val taper = 0.56f + 0.44f * tailProgress
-            val segRadius = snake.bodyRadius * taper
-            val hitRadius = (snake.headRadius + segRadius) * ArenaConfig.SELF_COLLISION_HITBOX_SCALE
-            val effectiveRadius = hitRadius.coerceAtMost(baseThreshold)
-
-            val seg = segments[i]
-            val dx = headX - seg.x
-            val dy = headY - seg.y
-            if (dx * dx + dy * dy <= effectiveRadius * effectiveRadius) {
-                return true
+        if (segIdx < segments.size && path.size > 0) {
+            val oldestX = path.oldestX()
+            val oldestY = path.oldestY()
+            while (segIdx < segments.size) {
+                segments[segIdx].x = oldestX
+                segments[segIdx].y = oldestY
+                segIdx++
             }
         }
-        return false
+
+        // O(1) ring-buffer tail pruning (keep 32-sample growth cushion)
+        val samplesUsedFromNewest = oldestUsedReverseIdx + 1
+        val excess = path.size - (samplesUsedFromNewest + 32)
+        if (excess > 24) {
+            path.dropOldest(excess)
+        }
     }
 
     private fun updateFoodInteractions(snake: SnakeEntity, dt: Float) {
