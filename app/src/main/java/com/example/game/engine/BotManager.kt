@@ -1,6 +1,7 @@
 package com.example.game.engine
 
 import com.example.game.model.ArenaConfig
+import com.example.game.model.BotDifficulty
 import com.example.game.model.BotPersonality
 import com.example.game.model.PathRingBuffer
 import com.example.game.model.SnakeEntity
@@ -24,6 +25,8 @@ class BotManager(
     private val random: Random = Random.Default,
 ) {
     private var nextBotSerial = 1
+    var activeDifficulty: BotDifficulty = BotDifficulty.MEDIUM
+        private set
 
     init {
         require(minBots in 1..targetBots && targetBots <= maxBots) {
@@ -36,7 +39,9 @@ class BotManager(
         snakes: MutableList<SnakeEntity>,
         controllers: MutableMap<String, SnakeController>,
         botSlotById: MutableMap<String, Int>,
+        difficulty: BotDifficulty = BotDifficulty.MEDIUM,
     ) {
+        activeDifficulty = difficulty
         nextBotSerial = 1
         for (slot in 0 until targetBots) {
             val (initialSegs, initialScore) = when {
@@ -190,7 +195,7 @@ class BotManager(
             )
         }
 
-        val personality = PERSONALITIES[slot % PERSONALITIES.size]
+        val personality = personalityForSlot(slot, activeDifficulty)
         val skin = SnakeSkins.all[(slot + random.nextInt(SnakeSkins.all.size)) % SnakeSkins.all.size]
         val serial = nextBotSerial++
         val callsign = BOT_CALLSIGNS[(serial - 1) % BOT_CALLSIGNS.size]
@@ -223,6 +228,7 @@ class BotManager(
         val controller = BotAiController(
             personality = personality,
             botSlot = slot,
+            difficulty = activeDifficulty,
             random = random,
         )
         return bot to controller
@@ -273,11 +279,70 @@ class BotManager(
         return bestX to bestY
     }
 
+    private fun personalityForSlot(slot: Int, difficulty: BotDifficulty): BotPersonality {
+        val roster = when (difficulty) {
+            BotDifficulty.EASY -> EASY_PERSONALITIES
+            BotDifficulty.MEDIUM -> MEDIUM_PERSONALITIES
+            BotDifficulty.HARD -> HARD_PERSONALITIES
+        }
+        return roster[slot % roster.size]
+    }
+
     companion object {
-        private val PERSONALITIES = listOf(
+        // Easy: 45% aggressive (5 HUNTER + 4 TACTICIAN + 11 SCAVENGER across 20 bots)
+        private val EASY_PERSONALITIES = listOf(
             BotPersonality.HUNTER,
             BotPersonality.SCAVENGER,
             BotPersonality.TACTICIAN,
+            BotPersonality.SCAVENGER,
+            BotPersonality.HUNTER,
+            BotPersonality.SCAVENGER,
+            BotPersonality.SCAVENGER,
+            BotPersonality.TACTICIAN,
+            BotPersonality.SCAVENGER,
+            BotPersonality.HUNTER,
+            BotPersonality.SCAVENGER,
+            BotPersonality.TACTICIAN,
+            BotPersonality.SCAVENGER,
+            BotPersonality.HUNTER,
+            BotPersonality.SCAVENGER,
+            BotPersonality.SCAVENGER,
+            BotPersonality.TACTICIAN,
+            BotPersonality.SCAVENGER,
+            BotPersonality.HUNTER,
+            BotPersonality.SCAVENGER,
+        )
+
+        // Medium: 75% aggressive (10 HUNTER + 5 TACTICIAN + 5 SCAVENGER across 20 bots)
+        private val MEDIUM_PERSONALITIES = listOf(
+            BotPersonality.HUNTER,
+            BotPersonality.TACTICIAN,
+            BotPersonality.HUNTER,
+            BotPersonality.SCAVENGER,
+        )
+
+        // Hard: 90% aggressive (13 HUNTER + 5 TACTICIAN + 2 SCAVENGER across 20 bots)
+        private val HARD_PERSONALITIES = listOf(
+            BotPersonality.HUNTER,
+            BotPersonality.HUNTER,
+            BotPersonality.TACTICIAN,
+            BotPersonality.HUNTER,
+            BotPersonality.HUNTER,
+            BotPersonality.TACTICIAN,
+            BotPersonality.HUNTER,
+            BotPersonality.HUNTER,
+            BotPersonality.SCAVENGER,
+            BotPersonality.HUNTER,
+            BotPersonality.HUNTER,
+            BotPersonality.TACTICIAN,
+            BotPersonality.HUNTER,
+            BotPersonality.HUNTER,
+            BotPersonality.TACTICIAN,
+            BotPersonality.HUNTER,
+            BotPersonality.HUNTER,
+            BotPersonality.TACTICIAN,
+            BotPersonality.SCAVENGER,
+            BotPersonality.HUNTER,
         )
 
         private val BOT_CALLSIGNS = listOf(

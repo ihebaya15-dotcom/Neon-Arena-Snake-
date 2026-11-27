@@ -30,4 +30,78 @@
     <string name="game_over_replay">العب مجدداً</string>
     <string name="game_over_change_skin">تغيير المظهر</string>
     <string name="cd_back_to_lobby">العودة للقائمة الرئيسية</string>
+    <string name="difficulty_overlay_title">اختر مستوى التحدي</string>
+    <string name="difficulty_overlay_subtitle">تضبط الصعوبة سرعة استجابة البوتات ومدة تسريعها وشراستها</string>
+    <string name="difficulty_easy_title">سهل</string>
+    <string name="difficulty_easy_desc">منافسة مريحة للاستكشاف والنمو</string>
+    <string name="difficulty_medium_title">متوسط</string>
+    <string name="difficulty_medium_desc">توازن تنافسي ومطاردات ذكية</string>
+    <string name="difficulty_hard_title">صعب</string>
+    <string name="difficulty_hard_desc">رد فعل فوري وهجوم شرس متواصل</string>
+    <string name="difficulty_stat_reaction">الاستجابة</string>
+    <string name="difficulty_stat_boost">مدة التسريع</string>
+    <string name="difficulty_stat_aggression">الشراسة</string>
+    <string name="difficulty_confirm_play">دخول الساحة</string>
+    <string name="cd_close_overlay">إغلاق نافذة اختيار الصعوبة</string>
+
+    <string name="nav_play">اللعب</string>
+    <string name="nav_store">المتجر</string>
+    <string name="nav_customize">التخصيص</string>
+    <string name="nav_record">السجل</string>
+
+    <string name="sparks_balance_short">%1$d</string>
+    <string name="sparks_currency_name">شرارة نيون</string>
+    <string name="game_over_sparks_earned">+%1$d شرارة نيون</string>
+
+    <string name="store_title">متجر النيون</string>
+    <string name="store_subtitle">اكسب شرارات النيون من الساحة وافتح مظاهر وتأثيرات حصرية</string>
+    <string name="store_cat_skins">الأطياف</string>
+    <string name="store_cat_trails">الذيل</string>
+    <string name="store_cat_eyes">العيون</string>
+    <string name="store_status_equipped">مجهّز</string>
+    <string name="store_status_owned">مملوك</string>
+    <string name="store_action_equip">تجهيز</string>
+    <string name="store_action_buy">فتح (%1$d)</string>
+    <string name="store_insufficient_sparks">تحتاج %1$d شرارة إضافية</string>
+
+    <string name="customize_title">استوديو التخصيص</string>
+    <string name="customize_preview_boost">معاينة التسريع</string>
+    <string name="customize_section_skin">طيف الثعبان</string>
+    <string name="customize_section_trail">تأثير الذيل</string>
+    <string name="customize_section_eyes">نمط العيون</string>
+    <string name="customize_section_ui_sync">تناسق ألوان الواجهة والتحكم</string>
+    <string name="customize_sync_auto">تلقائي مع الطيف</string>
+    <string name="customize_unlock_more_hint">افتح عناصر إضافية من المتجر</string>
+
+    <string name="record_title">سجل الساحة</string>
+    <string name="record_collection_progress">اكتمال المجموعة</string>
+    <string name="record_best_score">أعلى نتيجة</string>
+    <string name="record_total_kills">إجمالي الإقصاءات</string>
+    <string name="record_total_matches">عدد الجولات</string>
+    <string name="record_best_rank">أفضل مركز</string>
+    <string name="record_total_sparks">الشرارات المكتسبة</string>
+    <string name="record_food_eaten">الطاقة المجموعة</string>
+    <string name="record_achievements_title">الأوسمة المفتوحة</string>
+    <string name="ach_first_blood_title">المقصي الأول</string>
+    <string name="ach_first_blood_desc">حقق 5 إقصاءات إجمالية</string>
+    <string name="ach_high_roller_title">ملك النيون</string>
+    <string name="ach_high_roller_desc">تجاوز 1500 نقطة في جولة واحدة</string>
+    <string name="ach_collector_title">جامع الأطياف</string>
+    <string name="ach_collector_desc">افتح 4 عناصر من المتجر</string>
+    <string name="ach_veteran_title">مقاتل مخضرم</string>
+    <string name="ach_veteran_desc">أكمل 5 جولات في الساحة</string>
+
+    <string name="skin_crimson_overdrive">قرمزي فائق</string>
+    <string name="skin_arctic_prism">منشور قطبي</string>
+    <string name="skin_emerald_matrix">مصفوفة زمردية</string>
+
+    <string name="trail_classic_name">توهج كلاسيكي</string>
+    <string name="trail_sparks_name">شرارات البلازما</string>
+    <string name="trail_rings_name">حلقات النبض</string>
+    <string name="trail_stars_name">أثر النجوم</string>
+
+    <string name="eye_round_name">سايبر دائرية</string>
+    <string name="eye_slit_name">عيون الصياد</string>
+    <string name="eye_visor_name">قناع النيون</string>
+    <string name="eye_star_name">عيون النجمة</string>
 </resources>

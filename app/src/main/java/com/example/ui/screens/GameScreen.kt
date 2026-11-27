@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
@@ -92,7 +93,7 @@ fun GameScreen(
         }
     }
 
-    val accentColor = uiState.selectedSkin.primaryColor
+    val accentColor = uiState.coordinatedAccentColor
 
     Box(modifier = modifier.fillMaxSize()) {
         // World Arena & Snake Canvas
@@ -236,7 +237,33 @@ private fun GameOverOverlay(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            if (result.earnedSparks > 0) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SolarGold.copy(alpha = 0.16f))
+                        .border(1.dp, SolarGold.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                        .testTag("game_over_sparks_pill"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Bolt,
+                        contentDescription = null,
+                        tint = SolarGold,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.game_over_sparks_earned, result.earnedSparks),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = SolarGold,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
 
             Button(
                 onClick = onReplay,

@@ -1,6 +1,7 @@
 package com.example.game.engine
 
 import com.example.game.model.ArenaConfig
+import com.example.game.model.BotDifficulty
 import com.example.game.model.BotPersonality
 import com.example.game.model.ControlInput
 import com.example.game.model.FoodOrb
@@ -19,11 +20,12 @@ import kotlin.random.Random
  * Multi-layer AI Bot controller implementing:
  * 1) 5-ray forward danger sensing against 7000x7000 walls and enemy snake bodies
  * 2) Personality-driven tactical combat (HUNTER cutoff, SCAVENGER loot sprint, TACTICIAN safe growth)
- * 3) Weighted spatial food seeking via [ArenaSpatialGrid]
+ * 3) Dynamic [BotDifficulty] scaling for reaction cadence, boost burst duration, and aggression
  */
 class BotAiController(
     private val personality: BotPersonality,
     private val botSlot: Int,
+    private val difficulty: BotDifficulty = BotDifficulty.MEDIUM,
     private val random: Random = Random.Default,
 ) : SnakeController {
 
@@ -53,9 +55,10 @@ class BotAiController(
             wanderAngleOffset = (random.nextFloat() - 0.5f) * 0.55f
         }
 
-        // Stagger heavy spatial sensing every 2nd frame per bot while keeping immediate boundary safety
+        // Stagger spatial sensing based on difficulty reaction speed while keeping boundary safety immediate
         frameCounter++
-        val shouldReevaluate = (frameCounter and 1) == 0 ||
+        val interval = difficulty.reactionIntervalFrames.coerceAtLeast(1)
+        val shouldReevaluate = (frameCounter % interval) == 0 ||
             cachedInput === ControlInput.IDLE ||
             isNearBoundary(snake, world)
 
@@ -82,7 +85,10 @@ class BotAiController(
             }
             val escapeAngle = snake.angleRadians + RAY_OFFSETS_RAD[bestRayIdx]
             if (centerClear < 0.44f && canAffordBoost(snake, reserveSegments = 6)) {
-                boostHoldTimerSec = max(boostHoldTimerSec, 0.25f)
+                boostHoldTimerSec = max(boostHoldTimerSec, 0.25f * difficulty.boostDurationScale)
+            } else if (boostHoldTimerSec > 0.25f) {
+                // Trim offensive boost hold when swerving around an obstacle
+                boostHoldTimerSec = 0.20f
             }
             cachedInput = ControlInput(
                 vectorX = cos(escapeAngle),
@@ -93,9 +99,9 @@ class BotAiController(
         }
 
         // Priority 2: Personality Tactical Combat / High-Value Loot
-        queryNearbySnakes(snake, world, radius = 580f)
+        queryNearbySnakes(snake, world, radius = difficulty.senseRadius)
         val tacticalInput = when (personality) {
-            BotPersonality.HUNTER -> tryHunterIntercept(snake)
+            BotPersonality.HUNTER -> tryHunterIntercept(snake, maxTargetRange = difficulty.senseRadius)
             BotPersonality.SCAVENGER -> tryScavengerLootRush(snake, world)
             BotPersonality.TACTICIAN -> tryTacticianManeuver(snake, world)
         }
@@ -193,23 +199,44 @@ class BotAiController(
         }
     }
 
-    private fun tryHunterIntercept(snake: SnakeEntity): ControlInput? {
-        if (snake.segments.size < ArenaConfig.MIN_BOOST_SEGMENT_COUNT + 8) return null
+    private fun tryHunterIntercept(
+        snake: SnakeEntity,
+        maxTargetRange: Float = difficulty.senseRadius,
+    ): ControlInput? {
+        if (snake.segments.size < ArenaConfig.MIN_BOOST_SEGMENT_COUNT + difficulty.minBoostSpareSegments) {
+            return null
+        }
         var bestTarget: SnakeEntity? = null
-        var bestDist = 520f
+        var bestActualDist = maxTargetRange
+        var bestEffectiveDist = Float.MAX_VALUE
 
         for (i in nearbySnakesBuffer.indices) {
             val other = nearbySnakesBuffer[i]
-            val d = hypot(other.headX - snake.headX, other.headY - snake.headY)
-            if (d in 120f..bestDist) {
-                bestDist = d
+            val dx = other.headX - snake.headX
+            val dy = other.headY - snake.headY
+            val d = hypot(dx, dy)
+            if (d !in 110f..maxTargetRange) continue
+
+            // Prevent unnatural 180-degree dogpiles on distant targets moving away behind the bot
+            if (d > 600f) {
+                val headingDiff = abs(normalizeAngle(atan2(dy, dx) - snake.angleRadians))
+                if (headingDiff > 2.15f) continue
+            }
+
+            // Priority multiplier scales with difficulty for hunting the player
+            val effectiveDist = if (other.isPlayer) d * difficulty.playerPriorityWeight else d
+            if (effectiveDist < bestEffectiveDist) {
+                bestEffectiveDist = effectiveDist
+                bestActualDist = d
                 bestTarget = other
             }
         }
         val target = bestTarget ?: return null
 
-        // Predict point ahead of target's nose to cut across its trajectory
-        val leadDist = (bestDist * 0.45f).coerceIn(75f, 185f)
+        // Velocity-compensated point ahead of the target's nose to cut off its path
+        val interceptorBoostSpeed = ArenaConfig.BASE_SPEED * ArenaConfig.BOOST_SPEED_MULTIPLIER
+        val interceptTimeSec = (bestActualDist / interceptorBoostSpeed).coerceIn(0.28f, 0.90f)
+        val leadDist = (target.currentSpeed * interceptTimeSec).coerceIn(85f, 260f)
         val interceptX = (target.headX + cos(target.angleRadians) * leadDist)
             .coerceIn(220f, ArenaConfig.ARENA_WIDTH - 220f)
         val interceptY = (target.headY + sin(target.angleRadians) * leadDist)
@@ -218,8 +245,18 @@ class BotAiController(
         val desiredAngle = atan2(interceptY - snake.headY, interceptX - snake.headX)
         if (!isAngleSafe(snake, desiredAngle)) return null
 
-        if (bestDist < 310f && canAffordBoost(snake, reserveSegments = 10)) {
-            boostHoldTimerSec = max(boostHoldTimerSec, 0.35f)
+        val boostEngageDistance = 540f * difficulty.interceptRangeFactor
+        if (bestActualDist < boostEngageDistance &&
+            canAffordBoost(snake, reserveSegments = difficulty.minBoostSpareSegments)
+        ) {
+            val holdDurationSec = if (snake.segments.size >= ArenaConfig.MIN_BOOST_SEGMENT_COUNT + 12) {
+                val span = (difficulty.hunterMaxBoostHoldSec - difficulty.hunterMinBoostHoldSec)
+                    .coerceAtLeast(0f)
+                difficulty.hunterMinBoostHoldSec + random.nextFloat() * span
+            } else {
+                difficulty.hunterMinBoostHoldSec
+            }
+            boostHoldTimerSec = max(boostHoldTimerSec, holdDurationSec)
         }
 
         return ControlInput(
@@ -252,7 +289,7 @@ class BotAiController(
         val dist = hypot(targetOrb.x - snake.headX, targetOrb.y - snake.headY)
 
         if (dist < 350f && canAffordBoost(snake, reserveSegments = 8)) {
-            boostHoldTimerSec = max(boostHoldTimerSec, 0.30f)
+            boostHoldTimerSec = max(boostHoldTimerSec, 0.30f * difficulty.boostDurationScale)
         }
 
         return ControlInput(
@@ -271,7 +308,7 @@ class BotAiController(
                 val awayAngle = atan2(snake.headY - other.headY, snake.headX - other.headX)
                 if (isAngleSafe(snake, awayAngle)) {
                     if (canAffordBoost(snake, reserveSegments = 6)) {
-                        boostHoldTimerSec = max(boostHoldTimerSec, 0.25f)
+                        boostHoldTimerSec = max(boostHoldTimerSec, 0.25f * difficulty.boostDurationScale)
                     }
                     return ControlInput(
                         vectorX = cos(awayAngle),
@@ -281,6 +318,12 @@ class BotAiController(
                 }
             }
         }
+        val opportunisticIntercept = tryHunterIntercept(
+            snake = snake,
+            maxTargetRange = TACTICIAN_BASE_INTERCEPT_RANGE * difficulty.interceptRangeFactor,
+        )
+        if (opportunisticIntercept != null) return opportunisticIntercept
+
         return seekBestFood(snake, world)
     }
 
@@ -394,6 +437,7 @@ class BotAiController(
     }
 
     companion object {
+        private const val TACTICIAN_BASE_INTERCEPT_RANGE = 460f
         private const val OUTER_RAY_OFFSET_RAD = 0.92f
         private const val SAFE_RAY_CLEARANCE_THRESHOLD = 0.48f
         private const val SHARP_TURN_INNER_CLEARANCE_THRESHOLD = 0.58f

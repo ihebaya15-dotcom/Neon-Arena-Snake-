@@ -74,6 +74,52 @@ enum class BotPersonality {
     TACTICIAN,
 }
 
+enum class BotDifficulty(
+    val reactionIntervalFrames: Int,
+    val boostDurationScale: Float,
+    val senseRadius: Float,
+    val playerPriorityWeight: Float,
+    val aggressiveSharePercent: Int,
+    val interceptRangeFactor: Float,
+    val minBoostSpareSegments: Int,
+    val hunterMinBoostHoldSec: Float,
+    val hunterMaxBoostHoldSec: Float,
+) {
+    EASY(
+        reactionIntervalFrames = 4,
+        boostDurationScale = 0.65f,
+        senseRadius = 600f,
+        playerPriorityWeight = 0.85f,
+        aggressiveSharePercent = 45,
+        interceptRangeFactor = 0.72f,
+        minBoostSpareSegments = 7,
+        hunterMinBoostHoldSec = 0.42f,
+        hunterMaxBoostHoldSec = 0.65f,
+    ),
+    MEDIUM(
+        reactionIntervalFrames = 2,
+        boostDurationScale = 1.0f,
+        senseRadius = 900f,
+        playerPriorityWeight = 0.50f,
+        aggressiveSharePercent = 75,
+        interceptRangeFactor = 1.0f,
+        minBoostSpareSegments = 4,
+        hunterMinBoostHoldSec = 0.70f,
+        hunterMaxBoostHoldSec = 1.05f,
+    ),
+    HARD(
+        reactionIntervalFrames = 1,
+        boostDurationScale = 1.35f,
+        senseRadius = 1150f,
+        playerPriorityWeight = 0.35f,
+        aggressiveSharePercent = 90,
+        interceptRangeFactor = 1.25f,
+        minBoostSpareSegments = 4,
+        hunterMinBoostHoldSec = 0.95f,
+        hunterMaxBoostHoldSec = 1.45f,
+    ),
+}
+
 data class Vec2(
     var x: Float,
     var y: Float,
@@ -122,6 +168,8 @@ data class SnakeEntity(
     var isLeader: Boolean = false,
     var isAlive: Boolean = true,
     val personality: BotPersonality? = null,
+    val trailStyle: TrailStyle = TrailStyle.CLASSIC_GLOW,
+    val eyeStyle: EyeStyle = EyeStyle.CYBER_ROUND,
     var headRadius: Float = ArenaConfig.BASE_HEAD_RADIUS,
     var bodyRadius: Float = ArenaConfig.BASE_BODY_RADIUS,
     val segments: MutableList<Vec2> = mutableListOf(),
@@ -203,6 +251,7 @@ data class GameResult(
     val isNewBest: Boolean,
     val deathReason: DeathReason = DeathReason.ARENA_BOUNDARY,
     val killerName: String? = null,
+    val earnedSparks: Int = 0,
 )
 
 sealed interface GamePhase {

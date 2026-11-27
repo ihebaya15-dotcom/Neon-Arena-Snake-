@@ -162,15 +162,18 @@ private fun DrawScope.drawArenaGrid(
     val lineLeft = viewLeft.coerceAtLeast(0f)
     val lineRight = viewRight.coerceAtMost(arenaW)
 
+    val minorGridColor = GridLineBlue.copy(alpha = 0.16f)
+    val majorGridColor = GridMajorBlue.copy(alpha = 0.24f)
+
     if (lineBottom > lineTop) {
         var x = startX
         while (x <= endX) {
             val isMajor = ((x / cell).toInt() % 5) == 0
             drawLine(
-                color = if (isMajor) GridMajorBlue else GridLineBlue,
+                color = if (isMajor) majorGridColor else minorGridColor,
                 start = Offset(x, lineTop),
                 end = Offset(x, lineBottom),
-                strokeWidth = if (isMajor) 2.2f else 1.2f,
+                strokeWidth = if (isMajor) 1.4f else 0.9f,
             )
             x += cell
         }
@@ -181,10 +184,10 @@ private fun DrawScope.drawArenaGrid(
         while (y <= endY) {
             val isMajor = ((y / cell).toInt() % 5) == 0
             drawLine(
-                color = if (isMajor) GridMajorBlue else GridLineBlue,
+                color = if (isMajor) majorGridColor else minorGridColor,
                 start = Offset(lineLeft, y),
                 end = Offset(lineRight, y),
-                strokeWidth = if (isMajor) 2.2f else 1.2f,
+                strokeWidth = if (isMajor) 1.4f else 0.9f,
             )
             y += cell
         }
@@ -324,11 +327,6 @@ private fun DrawScope.drawSnake(
     val skin = snake.skin
     val isShielded = snake.spawnProtectionSec > 0f
     val shieldAlpha = if (isShielded) 0.55f + 0.25f * sin(worldTime * 14f) else 1f
-    val boostWave = if (snake.isBoosting) {
-        0.75f + 0.25f * sin(worldTime * 18f)
-    } else {
-        1f
-    }
 
     // Back-to-front segment rendering
     for (i in segments.lastIndex downTo 1) {
@@ -342,12 +340,16 @@ private fun DrawScope.drawSnake(
         val isBand = (i % 3 == 0)
         val ringColor = if (isBand) skin.secondaryColor else skin.primaryColor
 
-        drawCircle(
-            color = skin.glowColor.copy(
-                alpha = (if (snake.isBoosting) 0.30f else 0.15f) * boostWave * shieldAlpha,
-            ),
-            radius = radius * (if (snake.isBoosting) 1.78f else 1.48f),
+        drawSnakeTrailSegment(
             center = center,
+            radius = radius,
+            segmentIndex = i,
+            totalSegments = segments.size,
+            skin = skin,
+            trailStyle = snake.trailStyle,
+            isBoosting = snake.isBoosting,
+            worldTime = worldTime,
+            shieldAlpha = shieldAlpha,
         )
         drawCircle(
             color = ringColor.copy(alpha = shieldAlpha),
@@ -395,37 +397,12 @@ private fun DrawScope.drawSnake(
         )
     }
 
-    // Eyes tracking movement angle
-    val eyeForwardDist = headR * 0.46f
-    val eyeSpreadRad = 0.52f
-    val eyeRadius = headR * 0.30f
-    val pupilRadius = eyeRadius * 0.54f
-    val pupilLookDist = eyeRadius * 0.34f
-
-    val lookDx = cos(angle) * pupilLookDist
-    val lookDy = sin(angle) * pupilLookDist
-
-    val leftEyePos = Offset(
-        x = headCenter.x + cos(angle - eyeSpreadRad) * eyeForwardDist,
-        y = headCenter.y + sin(angle - eyeSpreadRad) * eyeForwardDist,
-    )
-    val rightEyePos = Offset(
-        x = headCenter.x + cos(angle + eyeSpreadRad) * eyeForwardDist,
-        y = headCenter.y + sin(angle + eyeSpreadRad) * eyeForwardDist,
-    )
-
-    drawCircle(color = Color.White, radius = eyeRadius, center = leftEyePos)
-    drawCircle(color = Color.White, radius = eyeRadius, center = rightEyePos)
-
-    drawCircle(
-        color = Color(0xFF070B18),
-        radius = pupilRadius,
-        center = Offset(leftEyePos.x + lookDx, leftEyePos.y + lookDy),
-    )
-    drawCircle(
-        color = Color(0xFF070B18),
-        radius = pupilRadius,
-        center = Offset(rightEyePos.x + lookDx, rightEyePos.y + lookDy),
+    drawSnakeEyes(
+        headCenter = headCenter,
+        headRadius = headR,
+        angleRadians = angle,
+        eyeStyle = snake.eyeStyle,
+        skin = skin,
     )
 
     // #1 Leader Crown above head

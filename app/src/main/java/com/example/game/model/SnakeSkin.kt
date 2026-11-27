@@ -1,6 +1,8 @@
 package com.example.game.model
 
 import androidx.compose.ui.graphics.Color
+import com.example.ui.theme.DangerCrimson
+import com.example.ui.theme.NeonBlue
 import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.PlasmaMagenta
 import com.example.ui.theme.SolarGold
@@ -14,6 +16,8 @@ data class SnakeSkin(
     val secondaryColor: Color,
     val coreColor: Color,
     val glowColor: Color,
+    val priceSparks: Int = 0,
+    val isStarter: Boolean = false,
 )
 
 object SnakeSkins {
@@ -24,6 +28,8 @@ object SnakeSkins {
         secondaryColor = Color(0xFF0099FF),
         coreColor = Color(0xFFE0FFFF),
         glowColor = Color(0xFF00F5D4),
+        priceSparks = 0,
+        isStarter = true,
     )
 
     val PLASMA_MAGENTA = SnakeSkin(
@@ -33,6 +39,7 @@ object SnakeSkins {
         secondaryColor = Color(0xFFFF6B9D),
         coreColor = Color(0xFFFFE6F1),
         glowColor = Color(0xFFFF2A85),
+        priceSparks = 120,
     )
 
     val TOXIC_LIME = SnakeSkin(
@@ -42,6 +49,7 @@ object SnakeSkins {
         secondaryColor = Color(0xFF00E676),
         coreColor = Color(0xFFF3FFE0),
         glowColor = Color(0xFFB5FF00),
+        priceSparks = 160,
     )
 
     val SOLAR_GOLD = SnakeSkin(
@@ -51,6 +59,7 @@ object SnakeSkins {
         secondaryColor = Color(0xFFFF5E00),
         coreColor = Color(0xFFFFF8E1),
         glowColor = Color(0xFFFFB800),
+        priceSparks = 220,
     )
 
     val ULTRAVIOLET = SnakeSkin(
@@ -60,6 +69,37 @@ object SnakeSkins {
         secondaryColor = Color(0xFF536DFE),
         coreColor = Color(0xFFF3E8FF),
         glowColor = Color(0xFF9B5DE5),
+        priceSparks = 260,
+    )
+
+    val CRIMSON_OVERDRIVE = SnakeSkin(
+        id = "crimson_overdrive",
+        displayName = "قرمزي فائق",
+        primaryColor = DangerCrimson,
+        secondaryColor = Color(0xFFFF6E40),
+        coreColor = Color(0xFFFFEBEE),
+        glowColor = Color(0xFFFF2A6D),
+        priceSparks = 320,
+    )
+
+    val ARCTIC_PRISM = SnakeSkin(
+        id = "arctic_prism",
+        displayName = "منشور قطبي",
+        primaryColor = NeonBlue,
+        secondaryColor = Color(0xFF80D8FF),
+        coreColor = Color(0xFFFFFFFF),
+        glowColor = Color(0xFF00C2FF),
+        priceSparks = 380,
+    )
+
+    val EMERALD_MATRIX = SnakeSkin(
+        id = "emerald_matrix",
+        displayName = "مصفوفة زمردية",
+        primaryColor = Color(0xFF00E676),
+        secondaryColor = NeonCyan,
+        coreColor = Color(0xFFE8FFF3),
+        glowColor = Color(0xFF00E676),
+        priceSparks = 450,
     )
 
     val all: List<SnakeSkin> = listOf(
@@ -68,6 +108,9 @@ object SnakeSkins {
         TOXIC_LIME,
         SOLAR_GOLD,
         ULTRAVIOLET,
+        CRIMSON_OVERDRIVE,
+        ARCTIC_PRISM,
+        EMERALD_MATRIX,
     )
 
     fun byId(id: String): SnakeSkin = all.firstOrNull { it.id == id } ?: CYBER_CYAN

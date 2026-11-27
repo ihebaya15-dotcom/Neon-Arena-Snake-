@@ -2,11 +2,13 @@ package com.example.game.engine
 
 import com.example.game.model.ArenaConfig
 import com.example.game.model.ArenaHudSnapshot
+import com.example.game.model.BotDifficulty
 import com.example.game.model.BotMapBlip
 import com.example.game.model.CameraState
 import com.example.game.model.ControlInput
 import com.example.game.model.DeathBurstParticle
 import com.example.game.model.DeathReason
+import com.example.game.model.EyeStyle
 import com.example.game.model.FoodOrb
 import com.example.game.model.GameResult
 import com.example.game.model.KillFeedEvent
@@ -16,6 +18,7 @@ import com.example.game.model.PathRingBuffer
 import com.example.game.model.SnakeEntity
 import com.example.game.model.SnakeSkin
 import com.example.game.model.SnakeSkins
+import com.example.game.model.TrailStyle
 import com.example.game.model.Vec2
 import kotlin.math.PI
 import kotlin.math.abs
@@ -79,6 +82,8 @@ class ArenaEngine(
     private var killBannerTimerSec: Float = 0f
     private var nextKillEventId: Long = 1L
     private var botsEnabled: Boolean = true
+    var currentDifficulty: BotDifficulty = BotDifficulty.MEDIUM
+        private set
 
     val playerSnake: SnakeEntity?
         get() = _snakes.firstOrNull { it.isPlayer }
@@ -87,7 +92,11 @@ class ArenaEngine(
         playerSkin: SnakeSkin,
         currentBestScore: Int,
         spawnBots: Boolean = true,
+        difficulty: BotDifficulty = BotDifficulty.MEDIUM,
+        playerTrail: TrailStyle = TrailStyle.CLASSIC_GLOW,
+        playerEye: EyeStyle = EyeStyle.CYBER_ROUND,
     ) {
+        currentDifficulty = difficulty
         sessionBestScore = currentBestScore
         elapsedPlaySeconds = 0f
         worldTimeSeconds = 0f
@@ -139,6 +148,8 @@ class ArenaEngine(
             eliminationsCount = 0,
             isBoosting = false,
             spawnProtectionSec = if (spawnBots) ArenaConfig.SPAWN_PROTECTION_SEC else 0f,
+            trailStyle = playerTrail,
+            eyeStyle = playerEye,
             segments = initialSegments,
             pathHistory = initialPath,
         )
@@ -154,6 +165,7 @@ class ArenaEngine(
                 snakes = _snakes,
                 controllers = controllers,
                 botSlotById = botSlotById,
+                difficulty = difficulty,
             )
         }
 
