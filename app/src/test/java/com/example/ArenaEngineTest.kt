@@ -290,4 +290,100 @@ class ArenaEngineTest {
             assertTrue(hypot(bot.headX - player.headX, bot.headY - player.headY) >= 0f)
         }
     }
+
+    @Test
+    fun botAiController_evaluatesAngleSafetyUsingCurrentSnakeHeadingBeforeFallback() {
+        val grid = com.example.game.engine.ArenaSpatialGrid()
+        val westAngle = kotlin.math.PI.toFloat()
+        val bot = SnakeEntity(
+            id = "bot_heading_test",
+            displayName = "TEST",
+            isPlayer = false,
+            skin = SnakeSkins.CYBER_CYAN,
+            headX = 2000f,
+            headY = 2000f,
+            angleRadians = westAngle,
+            currentSpeed = ArenaConfig.BASE_SPEED,
+            targetLength = 20f,
+            score = 100,
+            foodEatenCount = 0,
+            spawnProtectionSec = 0f,
+            segments = MutableList(20) { idx -> Vec2(2000f + idx * ArenaConfig.SEGMENT_SPACING, 2000f) },
+        )
+
+        // Obstacle sits 110 units away at westAngle - 1.15 rad: blocks the -0.92 rad ray (~107 units)
+        // while staying > 73 units clear of the inner -0.42 rad ray.
+        val blockerOffsetAngle = westAngle - 1.15f
+        val blockerSegs = MutableList(10) { idx ->
+            val dist = 110f + idx * 10f
+            Vec2(
+                2000f + kotlin.math.cos(blockerOffsetAngle) * dist,
+                2000f + kotlin.math.sin(blockerOffsetAngle) * dist,
+            )
+        }
+        val blocker = SnakeEntity(
+            id = "enemy_blocker",
+            displayName = "BLOCKER",
+            isPlayer = false,
+            skin = SnakeSkins.PLASMA_MAGENTA,
+            headX = blockerSegs.first().x,
+            headY = blockerSegs.first().y,
+            angleRadians = blockerOffsetAngle,
+            currentSpeed = ArenaConfig.BASE_SPEED,
+            targetLength = 10f,
+            score = 100,
+            foodEatenCount = 0,
+            spawnProtectionSec = 0f,
+            segments = blockerSegs,
+        )
+
+        // High-value orb on the blocked -0.92 rad flank (South-West: sin > 0),
+        // moderate orb on the safe +0.92 rad flank (North-West: sin < 0).
+        val blockedAngle = westAngle - 0.92f
+        val blockedLootOrb = FoodOrb(
+            id = 1,
+            x = 2000f + kotlin.math.cos(blockedAngle) * 210f,
+            y = 2000f + kotlin.math.sin(blockedAngle) * 210f,
+            radius = 12f,
+            points = 120,
+            growthValue = 1.5f,
+            colorIndex = 0,
+            pulsePhase = 0f,
+            isLootDrop = true,
+        )
+        val safeAngle = westAngle + 0.92f
+        val safeOrb = FoodOrb(
+            id = 2,
+            x = 2000f + kotlin.math.cos(safeAngle) * 220f,
+            y = 2000f + kotlin.math.sin(safeAngle) * 220f,
+            radius = 8f,
+            points = 20,
+            growthValue = 0.5f,
+            colorIndex = 1,
+            pulsePhase = 0f,
+        )
+
+        val world = object : com.example.game.engine.ArenaWorldView {
+            override val arenaWidth = ArenaConfig.ARENA_WIDTH
+            override val arenaHeight = ArenaConfig.ARENA_HEIGHT
+            override val foodOrbs = listOf(blockedLootOrb, safeOrb)
+            override val snakes = listOf(bot, blocker)
+            override val spatialGrid = grid
+        }
+        grid.rebuildFoodGrid(world.foodOrbs)
+        grid.rebuildSnakeGrid(world.snakes)
+
+        val controller = com.example.game.engine.BotAiController(
+            personality = com.example.game.model.BotPersonality.SCAVENGER,
+            botSlot = 1, // frameCounter becomes 2 -> evaluates on very first sampleInput call
+            random = kotlin.random.Random(42),
+        )
+        val input = controller.sampleInput(bot, world, 0.016f)
+
+        // Must reject the blocked -0.92 rad loot orb (vectorY > 0) and steer toward the safe +0.92 rad orb (vectorY < -0.25)
+        assertTrue(
+            "Bot heading West must reject blocked -0.92 rad orb and steer North-West (vectorY=${input.vectorY})",
+            input.vectorY < -0.25f,
+        )
+    }
 }

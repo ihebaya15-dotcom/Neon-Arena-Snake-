@@ -216,7 +216,7 @@ class BotAiController(
             .coerceIn(220f, ArenaConfig.ARENA_HEIGHT - 220f)
 
         val desiredAngle = atan2(interceptY - snake.headY, interceptX - snake.headX)
-        if (!isAngleSafe(desiredAngle)) return null
+        if (!isAngleSafe(snake, desiredAngle)) return null
 
         if (bestDist < 310f && canAffordBoost(snake, reserveSegments = 10)) {
             boostHoldTimerSec = max(boostHoldTimerSec, 0.35f)
@@ -241,7 +241,7 @@ class BotAiController(
             val score = (orb.points * 3.2f) / (dist + 50f)
             if (score > bestScore) {
                 val angleToOrb = atan2(orb.y - snake.headY, orb.x - snake.headX)
-                if (isAngleSafe(angleToOrb)) {
+                if (isAngleSafe(snake, angleToOrb)) {
                     bestScore = score
                     bestOrb = orb
                 }
@@ -269,7 +269,7 @@ class BotAiController(
             val dist = hypot(other.headX - snake.headX, other.headY - snake.headY)
             if (dist < 220f && other.isBoosting) {
                 val awayAngle = atan2(snake.headY - other.headY, snake.headX - other.headX)
-                if (isAngleSafe(awayAngle)) {
+                if (isAngleSafe(snake, awayAngle)) {
                     if (canAffordBoost(snake, reserveSegments = 6)) {
                         boostHoldTimerSec = max(boostHoldTimerSec, 0.25f)
                     }
@@ -296,7 +296,7 @@ class BotAiController(
             val dy = orb.y - snake.headY
             val dist = hypot(dx, dy)
             val angleToOrb = atan2(dy, dx)
-            if (!isAngleSafe(angleToOrb)) continue
+            if (!isAngleSafe(snake, angleToOrb)) continue
 
             val angleDiff = abs(normalizeAngle(angleToOrb - snake.angleRadians))
             val headingBonus = 1.25f - (angleDiff / PI.toFloat()) * 0.45f
@@ -340,8 +340,8 @@ class BotAiController(
             snake.headY > world.arenaHeight - margin
     }
 
-    private fun isAngleSafe(desiredAngle: Float): Boolean {
-        val diff = normalizeAngle(desiredAngle - snakeAngleApprox())
+    private fun isAngleSafe(snake: SnakeEntity, desiredAngle: Float): Boolean {
+        val diff = normalizeAngle(desiredAngle - snake.angleRadians)
         // Map desired angle difference to nearest forward ray clearance check
         var closestIdx = 0
         var closestDiff = Float.MAX_VALUE
@@ -352,14 +352,22 @@ class BotAiController(
                 closestIdx = i
             }
         }
-        return rayClearances[closestIdx] > 0.48f
+        if (rayClearances[closestIdx] <= SAFE_RAY_CLEARANCE_THRESHOLD) {
+            return false
+        }
+
+        // Sharp or rear turns (|diff| > 0.92 rad) sweep across the turning side's inner and outer
+        // rays, so require extra clearance on both before committing.
+        if (abs(diff) > OUTER_RAY_OFFSET_RAD) {
+            val innerSideIdx = if (diff < 0f) 1 else 2
+            val outerSideIdx = if (diff < 0f) 3 else 4
+            return rayClearances[innerSideIdx] > SHARP_TURN_INNER_CLEARANCE_THRESHOLD &&
+                rayClearances[outerSideIdx] > SAFE_RAY_CLEARANCE_THRESHOLD
+        }
+        return true
     }
 
-    private var lastMeasuredSnakeAngle = 0f
-    private fun snakeAngleApprox(): Float = lastMeasuredSnakeAngle
-
     private fun computeInwardCruiseAngle(snake: SnakeEntity, world: ArenaWorldView): Float {
-        lastMeasuredSnakeAngle = snake.angleRadians
         val margin = 520f
         return if (
             snake.headX < margin ||
@@ -386,6 +394,9 @@ class BotAiController(
     }
 
     companion object {
+        private const val OUTER_RAY_OFFSET_RAD = 0.92f
+        private const val SAFE_RAY_CLEARANCE_THRESHOLD = 0.48f
+        private const val SHARP_TURN_INNER_CLEARANCE_THRESHOLD = 0.58f
         private val RAY_OFFSETS_RAD = floatArrayOf(0f, -0.42f, 0.42f, -0.92f, 0.92f)
     }
 }
